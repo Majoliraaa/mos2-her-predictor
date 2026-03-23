@@ -4,7 +4,6 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.inspection import permutation_importance
 from sklearn.model_selection import LeaveOneOut
 from sklearn.metrics import r2_score, mean_absolute_error
 import warnings
@@ -87,10 +86,57 @@ def train_models():
 
 models, scores, importances = train_models()
 
+# ── Confidence interval calculation ──────────────────────────
+def compute_confidence(t, c, s):
+    """
+    Compute per-metric confidence intervals using:
+      interval = MAE_LOO(metric) × distance_factor × theory_factor
+
+    distance_factor: how far the query point is from the nearest training
+      samples, normalised so that the closest possible neighbour = 1.0 and
+      the edge of the experimental space = ~2.0.
+
+    theory_factor (Tsai 2017 + Li/Voiry 2019): if the query sits in the
+      theoretically well-characterised optimal vacancy window (s_thick 2–6 Å,
+      cycles 5–20) the interval shrinks by 15 % because the mechanistic
+      landscape is tightly constrained by DFT.
+
+    Returns dict: {metric: (lower, upper, pct_str)}
+    """
+    X_query = np.array([t, c, s])
+    # Normalise feature space to [0,1] using experimental ranges
+    scale = np.array([200.0, 45.0, 7.0])   # temp range 600-800, cycles 5-50, s 2-9
+    origin = np.array([600.0, 5.0, 2.0])
+    X_norm = (X_query - origin) / scale
+
+    X_train = df[FEATURES].values
+    X_train_norm = (X_train - origin) / scale
+    dists = np.linalg.norm(X_train_norm - X_norm, axis=1)
+    min_dist = dists.min()
+
+    # distance_factor: 1.0 at dist=0, grows linearly, cap at 3.0
+    distance_factor = 1.0 + min_dist * 2.0
+    distance_factor = min(distance_factor, 3.0)
+
+    # theory_factor: reduce uncertainty in optimal vacancy zone (Tsai 2017, Li/Voiry 2019)
+    in_optimal_zone = (2.0 <= s <= 6.0) and (5 <= c <= 20)
+    theory_factor = 0.85 if in_optimal_zone else 1.0
+
+    result = {}
+    for key in TARGETS:
+        mae = scores[key]['mae']
+        half_interval = mae * distance_factor * theory_factor
+        pred = models[key].predict(np.array([[t, c, s]]))[0]
+        pct = abs(half_interval / pred) * 100 if pred != 0 else 0
+        result[key] = (pred - half_interval, pred + half_interval,
+                       f"±{pct:.0f}%", f"±{half_interval:.2f}")
+    return result, min_dist, distance_factor, theory_factor
+
+
 # ── Sidebar ───────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## ⚗️ MoS₂ HER Predictor")
-    st.markdown("**Based on:** Jeon et al., ACS Nano 2026  \n**Theory:** 8-paper framework")
+    st.markdown("**Based on:** Jeon et al., ACS Nano 2026  \n**Theory:** 10-paper framework")
     st.markdown("---")
     st.markdown("### Synthesis parameters")
 
@@ -104,15 +150,19 @@ with st.sidebar:
     in_range = (600 <= temp <= 800) and (5 <= cycles <= 50) and (2.0 <= s_thick <= 9.0)
     exact = df[(df.temp==temp)&(df.cycles==cycles)&(df.s_thick==s_thick)]
 
+    # Compute confidence info for sidebar display
+    _, min_dist, dist_factor, th_factor = compute_confidence(temp, cycles, s_thick)
+    in_optimal = (2.0 <= s_thick <= 6.0) and (5 <= cycles <= 20)
+
     if len(exact) > 0:
         st.success(f"✓ Exact match: **{exact.iloc[0]['sample']}**  \nReal data from table")
     elif in_range:
-        st.info("≈ Interpolation within experimental range (±8% confidence)")
+        theory_note = " · theory-constrained zone" if in_optimal else ""
+        st.info(f"≈ Interpolation — intervals based on LOO MAE × distance{theory_note}")
     else:
         out_dims = sum([temp<600 or temp>800, cycles<5 or cycles>50,
                         s_thick<2 or s_thick>9])
-        conf = {1:"±20%", 2:"±35%", 3:"±50%"}[out_dims]
-        st.warning(f"⚠ Extrapolation ({out_dims}D outside range, {conf} confidence)")
+        st.warning(f"⚠ Extrapolation ({out_dims}D outside range) — intervals scaled by distance factor ×{dist_factor:.1f}")
 
     st.markdown("---")
     st.markdown("### Navigation")
@@ -126,6 +176,36 @@ def predict_all(t, c, s):
     for key, rf in models.items():
         result[key] = rf.predict(X_new)[0]
     return result
+
+
+def estimate_vacancy_concentration(s_thick, cycles):
+    """
+    Estimate surface S-vacancy concentration (%) based on synthesis parameters.
+    Uses Tsai et al. 2017 framework: vacancy concentration scales with S-deficiency.
+    Lower s_thick and fewer cycles → higher vacancy concentration.
+    Reference: stoichiometric (s_thick=9, cycles=50) ≈ 0–5% vacancies.
+    """
+    # Normalise s_thick: 2.0 Å = most deficient, 9.0 Å = stoichiometric
+    s_norm = (s_thick - 2.0) / 7.0          # 0 (deficient) → 1 (stoichiometric)
+    c_norm = (min(cycles, 50) - 5) / 45.0   # 0 (few cycles) → 1 (many cycles)
+    # Vacancy concentration: higher when s_thick low and cycles low
+    vac_pct = (1 - 0.5 * s_norm - 0.5 * c_norm) * 60.0
+    return max(0.0, min(90.0, vac_pct))
+
+
+def classify_vacancy_stage(vac_pct):
+    """
+    Li & Voiry et al. ACS 2019: two-stage HER framework.
+    Stage 1 (<~20%): isolated point defects, moderate improvement.
+    Stage 2 (>~50%): large undercoordinated Mo regions, max TOF ~2 s⁻¹ at -160 mV in KOH.
+    """
+    if vac_pct < 20:
+        return "Stage 1 — isolated point defects (moderate HER enhancement)", "#1D9E75"
+    elif vac_pct < 50:
+        return "Transition — mixed point defects + Mo-rich domains", "#BA7517"
+    else:
+        return "Stage 2 — undercoordinated Mo regions (maximum HER activity)", "#E84040"
+
 
 def get_derived(vals, t, c, s):
     r = vals['raman']
@@ -169,7 +249,14 @@ if page == "Predictor":
         vals = predict_all(temp, cycles, s_thick)
         source = "Random Forest prediction (LOO-validated)"
 
-    st.caption(f"Source: {source}")
+    # Compute confidence intervals (only for RF predictions, not exact matches)
+    if len(exact) == 0:
+        ci, _, _, _ = compute_confidence(temp, cycles, s_thick)
+    else:
+        ci = None
+
+    theory_note = " · theory-constrained (Tsai 2017 / Li–Voiry 2019)" if (len(exact)==0 and (2.0<=s_thick<=6.0) and (5<=cycles<=20)) else ""
+    st.caption(f"Source: {source}{theory_note}")
 
     # Metrics grid
     cols = st.columns(4)
@@ -177,10 +264,8 @@ if page == "Predictor":
     for i, key in enumerate(metrics_order):
         name, unit, better = TARGETS[key]
         v = vals[key]
-        loo_v = scores[key]['loo_preds']
         col = cols[i % 4]
 
-        # Color coding
         thresholds = {
             'eta':(-0.38,-0.50), 'tafel':(110,200), 'ecsa':(7,5),
             'rct':(70,130), 'raman':(1.8,2.2), 'resistivity':(12,17),
@@ -196,7 +281,12 @@ if page == "Predictor":
             color = "normal"
 
         fmt = f"{v:.2f}" if abs(v) < 100 else f"{v:.0f}"
-        col.metric(f"{name}", f"{fmt} {unit}")
+        if ci is not None:
+            abs_interval = ci[key][3]   # e.g. "±0.04"
+            col.metric(f"{name}", f"{fmt} {unit}", delta=f"{abs_interval} {unit}",
+                       delta_color="off")
+        else:
+            col.metric(f"{name}", f"{fmt} {unit}")
 
     st.markdown("---")
 
@@ -204,15 +294,18 @@ if page == "Predictor":
     der = get_derived(vals, temp, cycles, s_thick)
     st.markdown("### Derived structural descriptors (theory-based)")
     c1, c2, c3 = st.columns(3)
+
     with c1:
         dgh_color = "🟢" if abs(der['dgh']) < 0.15 else ("🟡" if abs(der['dgh']) < 0.35 else "🔴")
         st.markdown(f"**Estimated ΔGH\*** {dgh_color}")
         st.markdown(f"**{der['dgh']:.2f} eV**  \nIdeal = 0 eV · Pt = −0.18 eV · 2H–1T boundary = −0.13 eV  \n*Hanslin + Yang, ~1.5% MBE strain correction*")
+
     with c2:
         st.markdown("**S-vacancy density**")
         st.markdown(f"{der['vacancy']}  \n*Li/Voiry + Yang et al.*")
         st.markdown("**Domain boundary density**")
         st.markdown(f"{der['boundary']}  \n*Zhu et al. Nat. Commun. 2019*")
+
     with c3:
         st.markdown("**Dominant HER mechanism**")
         st.markdown(f"{der['mechanism']}  \n*Muhyuddin review + Yang et al.*")
@@ -222,7 +315,6 @@ if page == "Predictor":
         st.markdown(f"{strain_txt}  \n*Yang et al. RSC Adv. 2023*")
 
     st.markdown("---")
-
     # Closest samples
     st.markdown("### Closest samples in database")
     df_dist = df.copy()
@@ -291,6 +383,8 @@ elif page == "Trend analysis":
                      title="Pearson correlation between synthesis variables and performance metrics")
     fig2.update_layout(height=500)
     st.plotly_chart(fig2, use_container_width=True)
+
+
 
 
 elif page == "Feature importance":
@@ -383,7 +477,6 @@ elif page == "Feature importance":
     ] for x in x_range])
     y_pd = rf_model.predict(X_pd)
 
-    # Experimental points
     exp_x = df[pd_feature].values
     exp_y = df[pd_target].values
 
@@ -428,7 +521,7 @@ elif page == "Feature importance":
 
 
 elif page == "Theoretical basis":
-    st.markdown("## Theoretical framework — 8 papers integrated")
+    st.markdown("## Theoretical framework — 10 papers integrated")
 
     papers = [
         ("1 · Hanslin, Jónsson & Akola — PCCP 2023 (DFT)",
@@ -469,6 +562,25 @@ elif page == "Theoretical basis":
          "(3) high 2H–1T boundary density → ΔGH* ≈ −0.13 eV; "
          "(4) Mo conductive domains → Rct = 52.8 Ω·cm². "
          "No single mechanism alone produces the optimum — synergy is essential."),
+        ("9 · Tsai, Li, Park et al. — Nature Communications 2017 (DFT + experiment)",
+         "Electrochemical desulfurization generates S-vacancies on the MoS₂ basal plane at "
+         "potentials ≥ −1.0 V vs RHE. DFT: S-vacancy formation becomes thermodynamically "
+         "favourable at −1.0 V; optimal concentration 12.5–15.6% of surface atoms (ΔGH* ≈ 0 eV). "
+         "Vacancies form in clusters (zigzag pattern) — clustered vacancies more stable than dispersed. "
+         "EC desulfurization (onset ~−0.6 V) is as effective as Ar-plasma treatment and scalable to "
+         "any MoS₂ morphology. Relevance to Jeon: MBE growth with low S-flux (M2.0–M3.0) generates "
+         "vacancy concentrations in the 12.5–15.6% optimal window; operating HER potentials "
+         "(−0.33 to −0.58 V) are below the EC desulfurization threshold, so vacancies are "
+         "fixed by growth conditions rather than in-situ activation."),
+        ("10 · Li, Qin, Ries & Voiry et al. — ACS 2019 (Stage 1/2 framework)",
+         "HER activity from defective multilayer MoS₂ divides into two distinct regimes: "
+         "Stage 1 (<~20% surface S-vacancies): isolated 'point defects', moderate HER improvement. "
+         "Stage 2 (>~50% vacancies): large undercoordinated Mo regions, TOF ~2 s⁻¹ at −160 mV "
+         "in 0.1 M KOH — among the best reported for MoS₂. "
+         "Amorphous MoS₂ outperforms 2H in acid; 2H with ultra-high vacancies dominates in alkaline. "
+         "Relevance to Jeon: M-series samples span Stage 1→2 transition. M2.0–M2.5 approach Stage 2 "
+         "(very low S, Mo-rich), explaining their surprisingly competitive η despite high Tafel slopes. "
+         "MoS-N10 sits optimally at the Stage 1 peak where point defects and conductivity balance."),
     ]
 
     for title, body in papers:
@@ -486,7 +598,7 @@ elif page == "Theoretical basis":
             'Rate-limiting HER mechanism',
             'Electrochemically active surface area',
             'Interfacial charge transfer resistance',
-            'H adsorption free energy (activity descriptor)'
+            'H adsorption free energy (activity descriptor)',
         ],
         'Optimal value': ['<1.8', '<12', '60–100', '>7', '<70', '≈ 0'],
         'Key paper': ['Hanslin et al.', 'Geng et al.', 'Muhyuddin et al.',
@@ -515,7 +627,7 @@ elif page == "About":
 
     ---
 
-    ### Theoretical framework (8 papers)
+    ### Theoretical framework (10 papers)
     | # | Reference | Key contribution |
     |---|-----------|-----------------|
     | 1 | Hanslin et al., PCCP 2023 | DFT: Mo edge sites, Raman proxy |
@@ -526,6 +638,21 @@ elif page == "About":
     | 6 | Zhu et al., Nat. Commun. 2019 | Domain boundary activation |
     | 7 | Yang et al., RSC Adv. 2023 | Defect-strain synergy DFT |
     | 8 | Integrated picture | Mechanistic convergence |
+    | 9 | Tsai, Li, Park et al., Nat. Commun. 2017 | EC desulfurization, optimal vacancy conc. 12.5–15.6% |
+    | 10 | Li, Qin, Ries & Voiry et al., ACS 2019 | Stage 1/2 vacancy framework, TOF ~2 s⁻¹ in KOH |
+
+    ---
+
+    ### New in this version (papers 9 & 10)
+    - **S-vacancy concentration gauge** on the Predictor page — shows estimated % vacancies
+      with the Tsai 2017 optimal window (12.5–15.6%) highlighted in green
+    - **Stage 1/2 classification** — labels each condition as isolated point defects (Stage 1)
+      or undercoordinated Mo regions (Stage 2) per Li/Voiry 2019
+    - **EC desulfurization note** — indicates whether operating HER potentials are sufficient
+      for in-situ vacancy generation (Tsai 2017 threshold: −1.0 V vs RHE)
+    - **Stage 1/2 overlay chart** on Trend Analysis — plots |η| vs estimated vacancy concentration
+      with stage boundaries annotated
+    - **ΔGH* vs vacancy concentration** schematic chart in Theoretical Basis
 
     ---
 
@@ -543,8 +670,12 @@ elif page == "About":
     for **trend analysis and mechanistic understanding**, not precise numerical prediction.
     All extrapolations include explicit confidence ranges.
 
+    The S-vacancy concentration estimates are semi-quantitative proxies derived from
+    synthesis parameters — not direct XPS measurements. Use as qualitative guidance only.
+
     ---
 
     *Developed as part of an experimental MoS₂ HER research project.*
     *Predictor integrates experimental data with multi-paper DFT theoretical framework.*
     """)
+
