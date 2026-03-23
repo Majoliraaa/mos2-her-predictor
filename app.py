@@ -4,6 +4,9 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import Matern, ConstantKernel as C, WhiteKernel
+from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import LeaveOneOut
 from sklearn.metrics import r2_score, mean_absolute_error
 import warnings
@@ -62,76 +65,136 @@ FEATURE_LABELS = {
 
 SERIES_COLORS = {'T': '#378ADD', 'N': '#1D9E75', 'M': '#BA7517'}
 
-# ── RF Models ────────────────────────────────────────────────
+# ── Gaussian Process Models ───────────────────────────────────
 @st.cache_resource
-def train_models():
+def train_gp_models():
+    """
+    Train one GP per target on the full dataset.
+    Also runs LOO CV to get calibrated uncertainty estimates.
+    Uses Matérn ν=2.5 kernel with ARD (one length scale per feature).
+    Features are standardised before fitting.
+    """
+    X = df[FEATURES].values.astype(float)
+
+    gp_models, gp_scores, scalers_X, scalers_y, loo_stds = {}, {}, {}, {}, {}
+    loo = LeaveOneOut()
+
+    for key in TARGETS:
+        y = df[key].values.astype(float)
+
+        # Scalers fit on full data (used for final model)
+        sx = StandardScaler().fit(X)
+        sy = StandardScaler().fit(y.reshape(-1, 1))
+
+        kernel = (
+            C(1.0, (1e-3, 1e3))
+            * Matern(length_scale=[1.0, 1.0, 1.0],
+                     length_scale_bounds=[(0.01, 100)] * 3,
+                     nu=2.5)
+            + WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-5, 10))
+        )
+
+        # --- LOO to get calibrated std ---
+        loo_means, loo_stds_list = [], []
+        for tr, te in loo.split(X):
+            sx_loo = StandardScaler().fit(X[tr])
+            sy_loo = StandardScaler().fit(y[tr].reshape(-1, 1))
+            X_tr_s = sx_loo.transform(X[tr])
+            y_tr_s = sy_loo.transform(y[tr].reshape(-1, 1)).ravel()
+
+            gp_loo = GaussianProcessRegressor(
+                kernel=C(1.0, (1e-3, 1e3))
+                       * Matern(length_scale=[1.0]*3,
+                                length_scale_bounds=[(0.01,100)]*3, nu=2.5)
+                       + WhiteKernel(noise_level=0.1,
+                                     noise_level_bounds=(1e-5,10)),
+                n_restarts_optimizer=5, normalize_y=False, alpha=1e-6
+            )
+            gp_loo.fit(X_tr_s, y_tr_s)
+            X_te_s = sx_loo.transform(X[te])
+            m_s, std_s = gp_loo.predict(X_te_s, return_std=True)
+            m = sy_loo.inverse_transform(m_s.reshape(-1,1)).ravel()[0]
+            std = std_s[0] * sy_loo.scale_[0]
+            loo_means.append(m)
+            loo_stds_list.append(std)
+
+        loo_means = np.array(loo_means)
+        r2  = r2_score(y, loo_means)
+        mae = mean_absolute_error(y, loo_means)
+
+        # Calibration factor: ratio of average abs error to average predicted std
+        # Corrects for GP over/under-confidence
+        avg_err = np.mean(np.abs(y - loo_means))
+        avg_std = np.mean(loo_stds_list)
+        calib   = avg_err / avg_std if avg_std > 0 else 1.0
+
+        # Final GP trained on all data
+        gp_full = GaussianProcessRegressor(
+            kernel=kernel, n_restarts_optimizer=10,
+            normalize_y=False, alpha=1e-6
+        )
+        gp_full.fit(sx.transform(X),
+                    sy.transform(y.reshape(-1,1)).ravel())
+
+        gp_models[key]  = gp_full
+        gp_scores[key]  = {'r2': r2, 'mae': mae, 'loo_preds': loo_means,
+                            'calib': calib}
+        scalers_X[key]  = sx
+        scalers_y[key]  = sy
+        loo_stds[key]   = np.array(loo_stds_list)
+
+    return gp_models, gp_scores, scalers_X, scalers_y, loo_stds
+
+
+# ── Random Forest — kept only for Feature Importance page ────
+@st.cache_resource
+def train_rf_models():
     X = df[FEATURES].values
     models, scores, importances = {}, {}, {}
     loo = LeaveOneOut()
     for key in TARGETS:
         y = df[key].values
         rf = RandomForestRegressor(n_estimators=300, max_depth=4,
-                                    min_samples_leaf=2, random_state=42)
+                                   min_samples_leaf=2, random_state=42)
         preds = np.zeros(len(y))
         for tr, te in loo.split(X):
             rf.fit(X[tr], y[tr])
             preds[te] = rf.predict(X[te])
         rf.fit(X, y)
-        models[key] = rf
-        r2 = r2_score(y, preds)
-        mae = mean_absolute_error(y, preds)
-        scores[key] = {'r2': r2, 'mae': mae, 'loo_preds': preds}
+        models[key]      = rf
+        scores[key]      = {'r2': r2_score(y, preds),
+                            'mae': mean_absolute_error(y, preds),
+                            'loo_preds': preds}
         importances[key] = rf.feature_importances_
     return models, scores, importances
 
-models, scores, importances = train_models()
 
-# ── Confidence interval calculation ──────────────────────────
-def compute_confidence(t, c, s):
+# Train both — GP is primary, RF only for feature importance page
+with st.spinner("Training Gaussian Process models… (first load only)"):
+    gp_models, gp_scores, scalers_X, scalers_y, loo_stds = train_gp_models()
+
+rf_models, rf_scores, rf_importances = train_rf_models()
+
+
+def gp_predict(key, t, c, s):
     """
-    Compute per-metric confidence intervals using:
-      interval = MAE_LOO(metric) × distance_factor × theory_factor
-
-    distance_factor: how far the query point is from the nearest training
-      samples, normalised so that the closest possible neighbour = 1.0 and
-      the edge of the experimental space = ~2.0.
-
-    theory_factor (Tsai 2017 + Li/Voiry 2019): if the query sits in the
-      theoretically well-characterised optimal vacancy window (s_thick 2–6 Å,
-      cycles 5–20) the interval shrinks by 15 % because the mechanistic
-      landscape is tightly constrained by DFT.
-
-    Returns dict: {metric: (lower, upper, pct_str)}
+    Predict mean and calibrated 95% credible interval using the GP.
+    Returns (mean, lower_95, upper_95, std_calibrated).
     """
-    X_query = np.array([t, c, s])
-    # Normalise feature space to [0,1] using experimental ranges
-    scale = np.array([200.0, 45.0, 7.0])   # temp range 600-800, cycles 5-50, s 2-9
-    origin = np.array([600.0, 5.0, 2.0])
-    X_norm = (X_query - origin) / scale
+    X_new = np.array([[t, c, s]])
+    sx = scalers_X[key]
+    sy = scalers_y[key]
+    gp = gp_models[key]
 
-    X_train = df[FEATURES].values
-    X_train_norm = (X_train - origin) / scale
-    dists = np.linalg.norm(X_train_norm - X_norm, axis=1)
-    min_dist = dists.min()
+    X_s = sx.transform(X_new)
+    m_s, std_s = gp.predict(X_s, return_std=True)
 
-    # distance_factor: 1.0 at dist=0, grows linearly, cap at 3.0
-    distance_factor = 1.0 + min_dist * 2.0
-    distance_factor = min(distance_factor, 3.0)
+    mean = sy.inverse_transform(m_s.reshape(-1,1)).ravel()[0]
+    std  = std_s[0] * sy.scale_[0] * gp_scores[key]['calib']
 
-    # theory_factor: reduce uncertainty in optimal vacancy zone (Tsai 2017, Li/Voiry 2019)
-    in_optimal_zone = (2.0 <= s <= 6.0) and (5 <= c <= 20)
-    theory_factor = 0.85 if in_optimal_zone else 1.0
-
-    result = {}
-    for key in TARGETS:
-        mae = scores[key]['mae']
-        half_interval = mae * distance_factor * theory_factor
-        pred = models[key].predict(np.array([[t, c, s]]))[0]
-        pct = abs(half_interval / pred) * 100 if pred != 0 else 0
-        result[key] = (pred - half_interval, pred + half_interval,
-                       f"±{pct:.0f}%", f"±{half_interval:.2f}")
-    return result, min_dist, distance_factor, theory_factor
-
+    lower = mean - 1.96 * std
+    upper = mean + 1.96 * std
+    return mean, lower, upper, std
 
 # ── Sidebar ───────────────────────────────────────────────────
 with st.sidebar:
@@ -150,19 +213,14 @@ with st.sidebar:
     in_range = (600 <= temp <= 800) and (5 <= cycles <= 50) and (2.0 <= s_thick <= 9.0)
     exact = df[(df.temp==temp)&(df.cycles==cycles)&(df.s_thick==s_thick)]
 
-    # Compute confidence info for sidebar display
-    _, min_dist, dist_factor, th_factor = compute_confidence(temp, cycles, s_thick)
-    in_optimal = (2.0 <= s_thick <= 6.0) and (5 <= cycles <= 20)
-
     if len(exact) > 0:
         st.success(f"✓ Exact match: **{exact.iloc[0]['sample']}**  \nReal data from table")
     elif in_range:
-        theory_note = " · theory-constrained zone" if in_optimal else ""
-        st.info(f"≈ Interpolation — intervals based on LOO MAE × distance{theory_note}")
+        st.info("≈ Interpolation — GP 95% credible intervals shown per metric")
     else:
         out_dims = sum([temp<600 or temp>800, cycles<5 or cycles>50,
                         s_thick<2 or s_thick>9])
-        st.warning(f"⚠ Extrapolation ({out_dims}D outside range) — intervals scaled by distance factor ×{dist_factor:.1f}")
+        st.warning(f"⚠ Extrapolation ({out_dims}D outside range) — GP uncertainty grows automatically outside training data")
 
     st.markdown("---")
     st.markdown("### Navigation")
@@ -171,10 +229,11 @@ with st.sidebar:
 
 # ── Prediction helper ─────────────────────────────────────────
 def predict_all(t, c, s):
-    X_new = np.array([[t, c, s]])
+    """Returns GP mean for all targets."""
     result = {}
-    for key, rf in models.items():
-        result[key] = rf.predict(X_new)[0]
+    for key in TARGETS:
+        mean, _, _, _ = gp_predict(key, t, c, s)
+        result[key] = mean
     return result
 
 
@@ -245,18 +304,17 @@ if page == "Predictor":
     if len(exact) > 0:
         vals = {k: exact.iloc[0][k] for k in TARGETS}
         source = "Real data from Jeon et al. table"
+        gp_ci = None
     else:
         vals = predict_all(temp, cycles, s_thick)
-        source = "Random Forest prediction (LOO-validated)"
+        source = "Gaussian Process prediction (calibrated 95% credible interval)"
+        # Compute GP intervals for all metrics
+        gp_ci = {}
+        for key in TARGETS:
+            mean, lower, upper, std = gp_predict(key, temp, cycles, s_thick)
+            gp_ci[key] = {'mean': mean, 'lower': lower, 'upper': upper, 'std': std}
 
-    # Compute confidence intervals (only for RF predictions, not exact matches)
-    if len(exact) == 0:
-        ci, _, _, _ = compute_confidence(temp, cycles, s_thick)
-    else:
-        ci = None
-
-    theory_note = " · theory-constrained (Tsai 2017 / Li–Voiry 2019)" if (len(exact)==0 and (2.0<=s_thick<=6.0) and (5<=cycles<=20)) else ""
-    st.caption(f"Source: {source}{theory_note}")
+    st.caption(f"Source: {source}")
 
     # Metrics grid
     cols = st.columns(4)
@@ -281,10 +339,12 @@ if page == "Predictor":
             color = "normal"
 
         fmt = f"{v:.2f}" if abs(v) < 100 else f"{v:.0f}"
-        if ci is not None:
-            abs_interval = ci[key][3]   # e.g. "±0.04"
-            col.metric(f"{name}", f"{fmt} {unit}", delta=f"{abs_interval} {unit}",
-                       delta_color="off")
+
+        if gp_ci is not None:
+            std = gp_ci[key]['std']
+            fmt_std = f"±{std:.2f}" if abs(std) < 100 else f"±{std:.0f}"
+            col.metric(f"{name}", f"{fmt} {unit}",
+                       delta=f"{fmt_std} {unit} (1σ)", delta_color="off")
         else:
             col.metric(f"{name}", f"{fmt} {unit}")
 
@@ -393,20 +453,25 @@ elif page == "Feature importance":
     Random Forest trained on 14 experimental samples with **Leave-One-Out cross-validation**.
     Feature importance shows which synthesis variable (temperature, cycles, S-thickness)
     drives each performance metric most.
+    Note: predictions on the Predictor page use the Gaussian Process model.
+    This page uses Random Forest specifically for its feature importance scores.
     """)
 
-    # LOO performance
+    # LOO performance — show both GP and RF
     st.markdown("### Model performance (Leave-One-Out CV)")
     perf_data = []
     for key in TARGETS:
         name, unit, _ = TARGETS[key]
-        r2 = scores[key]['r2']
-        mae = scores[key]['mae']
-        perf_data.append({'Property': name, 'Unit': unit,
-                          'LOO R²': round(r2, 3), 'LOO MAE': round(mae, 3)})
+        perf_data.append({
+            'Property': name, 'Unit': unit,
+            'GP LOO R²': round(gp_scores[key]['r2'], 3),
+            'GP LOO MAE': round(gp_scores[key]['mae'], 3),
+            'RF LOO R²': round(rf_scores[key]['r2'], 3),
+            'RF LOO MAE': round(rf_scores[key]['mae'], 3),
+        })
     perf_df = pd.DataFrame(perf_data)
     st.dataframe(perf_df, use_container_width=True)
-    st.caption("⚠ With only 14 samples, LOO R² values below 0.5 indicate high uncertainty. Use as qualitative trend guidance.")
+    st.caption("⚠ With only 14 samples, LOO scores indicate high uncertainty. GP is used for predictions; RF is shown here for feature importance only.")
 
     # Feature importance bar chart
     st.markdown("### Feature importance by output variable")
@@ -417,7 +482,7 @@ elif page == "Feature importance":
             imp_data.append({
                 'Property': name,
                 'Feature': FEATURE_LABELS[feat],
-                'Importance': importances[key][i]
+                'Importance': rf_importances[key][i]
             })
     imp_df = pd.DataFrame(imp_data)
 
@@ -442,7 +507,7 @@ elif page == "Feature importance":
 
     # All properties heatmap
     st.markdown("### Feature importance — all properties")
-    heat_data = np.array([[importances[k][i] for i in range(3)] for k in TARGETS])
+    heat_data = np.array([[rf_importances[k][i] for i in range(3)] for k in TARGETS])
     heat_df = pd.DataFrame(heat_data,
                            index=[TARGETS[k][0] for k in TARGETS],
                            columns=[FEATURE_LABELS[f] for f in FEATURES])
@@ -463,7 +528,7 @@ elif page == "Feature importance":
                                format_func=lambda k: FEATURE_LABELS[k],
                                key='pd_feat')
 
-    rf_model = models[pd_target]
+    rf_model = rf_models[pd_target]
     ranges = {'temp': np.linspace(500,1000,60),
               'cycles': np.linspace(1,100,60),
               's_thick': np.linspace(1,12,60)}
@@ -475,7 +540,17 @@ elif page == "Feature importance":
         x if pd_feature=='cycles' else defaults['cycles'],
         x if pd_feature=='s_thick' else defaults['s_thick']
     ] for x in x_range])
-    y_pd = rf_model.predict(X_pd)
+
+    # GP predictions with uncertainty band
+    y_means, y_lowers, y_uppers = [], [], []
+    for row in X_pd:
+        m, lo, hi, _ = gp_predict(pd_target, row[0], row[1], row[2])
+        y_means.append(m)
+        y_lowers.append(lo)
+        y_uppers.append(hi)
+    y_means  = np.array(y_means)
+    y_lowers = np.array(y_lowers)
+    y_uppers = np.array(y_uppers)
 
     exp_x = df[pd_feature].values
     exp_y = df[pd_target].values
@@ -487,10 +562,18 @@ elif page == "Feature importance":
     }
 
     fig5 = go.Figure()
-    fig5.add_trace(go.Scatter(x=x_range, y=y_pd, mode='lines',
-                               name='RF prediction', line=dict(color='#7F77DD', width=2)))
+    # 95% credible band
+    fig5.add_trace(go.Scatter(
+        x=np.concatenate([x_range, x_range[::-1]]),
+        y=np.concatenate([y_uppers, y_lowers[::-1]]),
+        fill='toself', fillcolor='rgba(127,119,221,0.15)',
+        line=dict(color='rgba(255,255,255,0)'),
+        name='95% credible interval', showlegend=True
+    ))
+    fig5.add_trace(go.Scatter(x=x_range, y=y_means, mode='lines',
+                               name='GP mean', line=dict(color='#7F77DD', width=2)))
     exp_in = x_range[in_range_mask[pd_feature]]
-    y_in = y_pd[in_range_mask[pd_feature]]
+    y_in   = y_means[in_range_mask[pd_feature]]
     fig5.add_trace(go.Scatter(x=exp_in, y=y_in, mode='lines',
                                name='Experimental range',
                                line=dict(color='#1D9E75', width=3)))
@@ -517,7 +600,7 @@ elif page == "Feature importance":
     fig5.update_xaxes(showgrid=True, gridcolor='rgba(128,128,128,0.15)')
     fig5.update_yaxes(showgrid=True, gridcolor='rgba(128,128,128,0.15)')
     st.plotly_chart(fig5, use_container_width=True)
-    st.caption("Green line = interpolation within experimental data. Purple = extrapolation zone. Dots = real data (colored by series T/N/M).")
+    st.caption("Purple band = GP 95% credible interval. Green line = interpolation within experimental data. Dots = real data (colored by series T/N/M).")
 
 
 elif page == "Theoretical basis":
@@ -657,25 +740,23 @@ elif page == "About":
     ---
 
     ### Machine learning
-    - **Algorithm**: Random Forest (300 trees, max depth 4)
+    - **Primary model**: Gaussian Process (Matérn ν=2.5 kernel, ARD, calibrated 95% credible intervals)
+    - **Secondary model**: Random Forest (300 trees) — used only for feature importance
     - **Validation**: Leave-One-Out cross-validation (only valid strategy with n=14)
+    - **Uncertainty**: GP posterior std calibrated against LOO errors — grows naturally outside training data
     - **Features**: Annealing temperature, deposition cycles, S-layer thickness
     - **Targets**: η, Tafel slope, ECSA, Rct, Raman ratio, resistivity, TOF (ECSA), TOF (mass)
 
     ---
 
     ### Important limitations
-    With only 14 training samples, Random Forest predictions have high uncertainty,
-    especially for extrapolation outside the experimental range. This tool is designed
+    With only 14 training samples, even GP predictions have high uncertainty.
+    The 95% credible intervals are statistically principled — unlike heuristic percentage ranges —
+    but they are only as reliable as the GP model itself. This tool is designed
     for **trend analysis and mechanistic understanding**, not precise numerical prediction.
-    All extrapolations include explicit confidence ranges.
-
-    The S-vacancy concentration estimates are semi-quantitative proxies derived from
-    synthesis parameters — not direct XPS measurements. Use as qualitative guidance only.
 
     ---
 
     *Developed as part of an experimental MoS₂ HER research project.*
     *Predictor integrates experimental data with multi-paper DFT theoretical framework.*
     """)
-
