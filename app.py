@@ -88,28 +88,16 @@ TARGETS = {
     'tof_mass': ('TOF (mass)', 'nmol µg⁻¹s⁻¹', 'max'),
 }
 
-FEATURES = ['temp', 'cycles', 's_thick', 'layer_n', 'mo_s_ratio']
+FEATURES = ['temp', 'cycles', 's_thick']
 FEATURE_LABELS = {
-    'temp':       'Annealing temperature (°C)',
-    'cycles':     'Deposition cycles',
-    's_thick':    'S-layer thickness (Å)',
-    'layer_n':    'Number of layers',
-    'mo_s_ratio': 'Mo/S atomic ratio',
+    'temp':    'Annealing temperature (°C)',
+    'cycles':  'Deposition cycles',
+    's_thick': 'S-layer thickness (Å)',
 }
-FEATURE_RANGES = {
-    'temp':       (500, 1000, 800, 50),
-    'cycles':     (1, 100, 10, 1),
-    's_thick':    (1.0, 12.0, 3.0, 0.5),
-    'layer_n':    (1, 25, 5, 1),
-    'mo_s_ratio': (0.45, 0.90, 0.56, 0.01),
-}
-EXPERIMENTAL_RANGES = {
-    'temp':       (600, 800),
-    'cycles':     (5, 50),
-    's_thick':    (2.0, 9.0),
-    'layer_n':    (2, 20),
-    'mo_s_ratio': (0.46, 0.82),  # corrected XPS scale: stoichiometric ~0.455, Mo-rich M2.0 ~0.82
-}
+# layer_n and mo_s_ratio are STRUCTURAL DESCRIPTORS for the method badge only.
+# They are NOT GP features: per-sample values are estimated (not measured in Jeon),
+# and their variation in the dataset is too correlated with cycles/s_thick to
+# add independent information to the GP model.
 
 SERIES_COLORS = {'T': '#378ADD', 'N': '#1D9E75', 'M': '#BA7517'}
 
@@ -226,12 +214,9 @@ with st.spinner("Training Gaussian Process models… (first load only)"):
 rf_models, rf_scores, rf_importances = train_rf_models()
 
 
-def gp_predict(key, t, c, s, ln, msr):
-    """
-    Predict mean and calibrated 95% credible interval using the GP.
-    Returns (mean, lower_95, upper_95, std_calibrated).
-    """
-    X_new = np.array([[t, c, s, ln, msr]])
+def gp_predict(key, t, c, s):
+    """Predict mean and calibrated 95% credible interval using the GP."""
+    X_new = np.array([[t, c, s]])
     sx = scalers_X[key]
     sy = scalers_y[key]
     gp = gp_models[key]
@@ -430,11 +415,11 @@ with st.sidebar:
                     label_visibility="collapsed")
 
 # ── Prediction helper ─────────────────────────────────────────
-def predict_all(t, c, s, ln, msr):
+def predict_all(t, c, s):
     """Returns GP mean for all targets."""
     result = {}
     for key in TARGETS:
-        mean, _, _, _ = gp_predict(key, t, c, s, ln, msr)
+        mean, _, _, _ = gp_predict(key, t, c, s)
         result[key] = mean
     return result
 
@@ -541,11 +526,11 @@ if page == "Predictor":
         source = "Real data from Jeon et al. table"
         gp_ci = None
     else:
-        vals = predict_all(temp, cycles, s_thick, layer_n, mo_s_ratio)
+        vals = predict_all(temp, cycles, s_thick)
         source = "Gaussian Process prediction (calibrated 95% credible interval)"
         gp_ci = {}
         for key in TARGETS:
-            mean, lower, upper, std = gp_predict(key, temp, cycles, s_thick, layer_n, mo_s_ratio)
+            mean, lower, upper, std = gp_predict(key, temp, cycles, s_thick)
             gp_ci[key] = {'mean': mean, 'lower': lower, 'upper': upper, 'std': std}
 
     st.caption(f"Source: {source}")
@@ -943,26 +928,22 @@ elif page == "Feature importance":
                                key='pd_feat')
 
     rf_model = rf_models[pd_target]
-    ranges = {'temp': np.linspace(500,1000,60),
-              'cycles': np.linspace(1,100,60),
-              's_thick': np.linspace(1,12,60),
-              'layer_n': np.linspace(1,12,60),
-              'mo_s_ratio': np.linspace(0.45,0.80,60)}
-    defaults = {'temp':800, 'cycles':10, 's_thick':3.0, 'layer_n':4, 'mo_s_ratio':0.55}
+    ranges = {'temp':    np.linspace(500, 1000, 60),
+              'cycles':  np.linspace(1, 100, 60),
+              's_thick': np.linspace(1, 12, 60)}
+    defaults = {'temp': 800, 'cycles': 10, 's_thick': 3.0}
 
     x_range = ranges[pd_feature]
     X_pd = np.array([[
-        x if pd_feature=='temp'       else defaults['temp'],
-        x if pd_feature=='cycles'     else defaults['cycles'],
-        x if pd_feature=='s_thick'    else defaults['s_thick'],
-        x if pd_feature=='layer_n'    else defaults['layer_n'],
-        x if pd_feature=='mo_s_ratio' else defaults['mo_s_ratio'],
+        x if pd_feature == 'temp'    else defaults['temp'],
+        x if pd_feature == 'cycles'  else defaults['cycles'],
+        x if pd_feature == 's_thick' else defaults['s_thick'],
     ] for x in x_range])
 
     # GP predictions with uncertainty band
     y_means, y_lowers, y_uppers = [], [], []
     for row in X_pd:
-        m, lo, hi, _ = gp_predict(pd_target, row[0], row[1], row[2], row[3], row[4])
+        m, lo, hi, _ = gp_predict(pd_target, row[0], row[1], row[2])
         y_means.append(m)
         y_lowers.append(lo)
         y_uppers.append(hi)
@@ -974,11 +955,9 @@ elif page == "Feature importance":
     exp_y = df[pd_target].values
 
     in_range_mask = {
-        'temp':       (x_range >= 600)  & (x_range <= 800),
-        'cycles':     (x_range >= 5)    & (x_range <= 50),
-        's_thick':    (x_range >= 2)    & (x_range <= 9),
-        'layer_n':    (x_range >= 1)    & (x_range <= 9),
-        'mo_s_ratio': (x_range >= 0.50) & (x_range <= 0.72),
+        'temp':    (x_range >= 600) & (x_range <= 800),
+        'cycles':  (x_range >= 5)   & (x_range <= 50),
+        's_thick': (x_range >= 2)   & (x_range <= 9),
     }
 
     fig5 = go.Figure()
