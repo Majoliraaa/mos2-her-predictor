@@ -344,47 +344,62 @@ with st.sidebar:
     st.markdown("---")
 
     st.markdown("### 🔑 Key descriptors")
-    st.caption("Adjust these to explore HER activity and get a synthesis method recommendation.")
+    st.caption("Move these sliders → method badge updates live.")
 
-    layer_n = st.slider("Layer #",
-                        min_value=1, max_value=25, value=5, step=1,
-                        help="Number of MoS₂ layers. Optimal ≤3 trilayers confirmed by AFM + impact electrochemistry (Manyepedza et al. J. Phys. Chem. C 2022). ⚠ Values per Jeon sample derived from XRD Scherrer (002) ÷ 0.615 nm/layer.")
-    st.caption("⚠ Estimated — XRD Scherrer derived; threshold ≤3L from Manyepedza et al. 2022 (AFM-confirmed)")
-
-    mo_s_ratio = st.slider("Mo/S atomic ratio",
-                           min_value=0.45, max_value=0.90, value=0.56, step=0.01,
-                           help="Stoichiometric 2H-MoS₂ = ~0.455 (XPS: S/Mo~2.2, Baker et al. 2001). Fully S-depleted limit ~0.893 (Lince et al. via Baker). Values per sample estimated from s_thick and XANES/EXAFS phase data (Jeon et al. 2026). ⚠ XPS not reported per sample.")
-    st.caption("⚠ Estimated — XPS per sample not in Jeon et al.; scale from Baker et al. 2001 & Jeon XANES/EXAFS")
-
-    ecsa_input = st.slider("Target ECSA (cm²)",
-                           min_value=2.0, max_value=12.0, value=8.0, step=0.5,
-                           help="Electrochemically active surface area. Higher = more active sites. ✅ Real data from Jeon et al. 2026 Table 1.")
-
-    rct_input = st.slider("Target Rct (Ω·cm²)",
-                          min_value=20.0, max_value=200.0, value=55.0, step=5.0,
-                          help="Charge-transfer resistance. Lower = faster kinetics. ✅ Real data from Jeon et al. 2026 Table 1.")
-
-    # ── Live method badge ──────────────────────────────────────
-    st.markdown("---")
-    method_label, method_color, method_reasons = recommend_method(
-        layer_n, mo_s_ratio, ecsa_input, rct_input
+    layer_n = st.slider(
+        "Layer #",
+        min_value=1, max_value=25, value=5, step=1,
+        help="Number of MoS₂ layers. ≤3 trilayers = optimal HER onset "
+             "(Manyepedza et al. J. Phys. Chem. C 2022, AFM-confirmed). "
+             "⚠ Per-sample values derived from XRD Scherrer ÷ 0.615 nm/layer."
     )
+    st.caption("⚠ Estimated · threshold ≤3L: Manyepedza 2022")
+
+    mo_s_ratio = st.slider(
+        "Mo/S atomic ratio",
+        min_value=0.45, max_value=0.90, value=0.56, step=0.01,
+        help="2H-MoS₂ stoichiometric = ~0.455 (XPS S/Mo≈2.2). "
+             "Mo-rich limit ~0.893. Optimal 0.55–0.72 = Mo⁰/MoS₂ coexistence. "
+             "⚠ Per-sample values estimated from Jeon XANES/EXAFS."
+    )
+    st.caption("⚠ Estimated · scale: Sherwood 2024 / Jeon XANES")
+
+    ecsa_target = st.slider(
+        "Target ECSA (cm²)",
+        min_value=2.0, max_value=12.0, value=8.0, step=0.5,
+        help="Electrochemically active surface area you want to achieve. "
+             "The GP predicts the actual ECSA from synthesis parameters — "
+             "this slider sets your target for the method recommendation. "
+             "✅ Real ECSA data: Jeon et al. 2026 Table 1 (range 3.5–9.2 cm²)."
+    )
+    st.caption("✅ Real data range 3.5–9.2 cm² · Jeon 2026 Table 1")
+
+    # ── Live method badge (updates as sliders move) ────────────
+    # Use ecsa_target for method logic; Rct threshold fixed at optimal
+    # (best Rct from Jeon: MoS-M6.0 = 45.5 Ω·cm²)
+    method_label, method_color, method_reasons = recommend_method(
+        layer_n, mo_s_ratio, ecsa_target, rct_target=55.0
+    )
+    st.markdown("---")
     st.markdown(
         f"<div style='background:{method_color}22; border-left:4px solid {method_color}; "
         f"padding:10px 12px; border-radius:6px;'>"
-        f"<div style='font-size:1.1em; font-weight:700; color:{method_color};'>{method_label}</div>"
-        f"</div>",
+        f"<div style='font-size:1.15em; font-weight:800; color:{method_color};'>"
+        f"{method_label}</div>"
+        f"<div style='font-size:0.78em; color:#888; margin-top:4px;'>"
+        f"Layer # {layer_n} · Mo/S {mo_s_ratio:.2f} · ECSA ≥{ecsa_target:.1f} cm²"
+        f"</div></div>",
         unsafe_allow_html=True
     )
     with st.expander("Why this method?", expanded=False):
         for r in method_reasons:
             st.caption(f"• {r}")
         if not method_reasons:
-            st.caption("Near-stoichiometric, thick-film conditions — chemical CVD is sufficient.")
+            st.caption("Near-stoichiometric, thick-film — chemical CVD is sufficient.")
 
     st.markdown("---")
     st.markdown("### Advanced synthesis controls")
-    st.caption("Used by the GP predictor for full performance estimates.")
+    st.caption("Used by the GP predictor for full electrochemical estimates.")
     temp    = st.slider("Annealing temperature (°C)", 500, 1000, 800, 50)
     cycles  = st.slider("Deposition cycles", 1, 100, 10, 1)
     s_thick = st.slider("S-layer thickness (Å)", 1.0, 12.0, 3.0, 0.5)
@@ -507,7 +522,7 @@ if page == "Predictor":
         f"<span style='font-size:1.4em; font-weight:800; color:{method_color};'>{method_label}</span>"
         f"<span style='color:#888; font-size:0.9em; margin-left:16px;'>"
         f"Layer # = {layer_n} · Mo/S = {mo_s_ratio:.2f} · "
-        f"Target ECSA = {ecsa_input:.1f} cm² · Target Rct = {rct_input:.0f} Ω·cm²</span>"
+        f"Target ECSA = {ecsa_target:.1f} cm²</span>"
         f"</div>",
         unsafe_allow_html=True
     )
@@ -541,28 +556,31 @@ if page == "Predictor":
     stage_txt, stage_color = classify_vacancy_stage(vac_pct)
     kd1, kd2, kd3, kd4 = st.columns(4)
     with kd1:
-        ln_icon = "🟢" if layer_n <= 5 else ("🟡" if layer_n <= 12 else "🔴")
+        ln_icon = "🟢" if layer_n <= 3 else ("🟡" if layer_n <= 6 else "🔴")
         st.metric("Layer #", f"{layer_n} layers")
-        st.caption(f"{ln_icon} Optimal ≤5L (N10=~5L) for edge density")
-        st.caption("⚠ Estimated descriptor — XRD Scherrer / 0.615 nm")
+        st.caption(f"{ln_icon} Optimal ≤3L (Manyepedza 2022) · MBE: ≤6L")
+        st.caption("⚠ Estimated · XRD Scherrer ÷ 0.615 nm")
     with kd2:
         msr_icon = "🟢" if 0.55 <= mo_s_ratio <= 0.70 else ("🟡" if mo_s_ratio < 0.80 else "🔴")
         st.metric("Mo/S ratio", f"{mo_s_ratio:.2f}")
-        st.caption(f"{msr_icon} Optimal 0.55–0.70 (Mo+MoS₂ coexistence)")
-        st.caption("⚠ Estimated — XPS scale from Baker et al. 2001")
+        st.caption(f"{msr_icon} Optimal 0.55–0.72 (Mo⁰/MoS₂ coexistence)")
+        st.caption("⚠ Estimated · scale: Sherwood 2024")
     with kd3:
-        ecsa_val = vals['ecsa']
-        ecsa_icon = "🟢" if ecsa_val >= 7 else ("🟡" if ecsa_val >= 5 else "🔴")
-        st.metric("ECSA (predicted)", f"{ecsa_val:.1f} cm²")
-        st.caption(f"{ecsa_icon} Target ≥7 cm² · Input target: {ecsa_input:.1f} cm²")
-        st.caption("✅ Real data — Jeon et al. 2026 Table 1")
+        ecsa_pred = vals['ecsa']
+        ecsa_delta = ecsa_pred - ecsa_target
+        ecsa_icon = "🟢" if ecsa_pred >= ecsa_target else ("🟡" if ecsa_pred >= ecsa_target * 0.8 else "🔴")
+        delta_str = f"{ecsa_delta:+.1f} vs target"
+        st.metric("ECSA predicted", f"{ecsa_pred:.1f} cm²",
+                  delta=delta_str,
+                  delta_color="normal" if ecsa_delta >= 0 else "inverse")
+        st.caption(f"{ecsa_icon} Target: {ecsa_target:.1f} cm² · ✅ Jeon 2026")
     with kd4:
         resist_val = vals['resistivity']
         rct_val    = vals['rct']
         phys_icon  = "🟢" if resist_val < 12 and rct_val < 70 else ("🟡" if resist_val < 17 else "🔴")
         st.metric("Physical props", f"ρ={resist_val:.1f} Ω·cm")
         st.caption(f"{phys_icon} Rct={rct_val:.0f} Ω·cm² · target ρ<12, Rct<70")
-        st.caption("✅ Real data — Jeon et al. 2026 Table 1")
+        st.caption("✅ Real data · Jeon 2026 Table 1")
 
     st.markdown("---")
 
