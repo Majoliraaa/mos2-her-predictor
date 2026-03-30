@@ -103,15 +103,14 @@ SERIES_COLORS = {'T': '#378ADD', 'N': '#1D9E75', 'M': '#BA7517'}
 
 # ── Gaussian Process Models ───────────────────────────────────
 @st.cache_resource
-def train_gp_models():
+def train_gp_models_v3():
     """
     Train one GP per target on the full dataset.
-    Also runs LOO CV to get calibrated uncertainty estimates.
-    Uses Matérn ν=2.5 kernel with ARD (one length scale per feature).
-    Features are standardised before fitting.
+    v3: uses 3 synthesis features (temp, cycles, s_thick) only.
+    layer_n and mo_s_ratio moved to descriptor-only role.
     """
     X = df[FEATURES].values.astype(float)
-    n_feat = X.shape[1]  # dynamic — currently 5 features
+    n_feat = X.shape[1]  # 3 features
 
     gp_models, gp_scores, scalers_X, scalers_y, loo_stds = {}, {}, {}, {}, {}
     loo = LeaveOneOut()
@@ -186,7 +185,7 @@ def train_gp_models():
 
 # ── Random Forest — kept only for Feature Importance page ────
 @st.cache_resource
-def train_rf_models():
+def train_rf_models_v3():
     X = df[FEATURES].values
     models, scores, importances = {}, {}, {}
     loo = LeaveOneOut()
@@ -209,9 +208,9 @@ def train_rf_models():
 
 # Train both — GP is primary, RF only for feature importance page
 with st.spinner("Training Gaussian Process models… (first load only)"):
-    gp_models, gp_scores, scalers_X, scalers_y, loo_stds = train_gp_models()
+    gp_models, gp_scores, scalers_X, scalers_y, loo_stds = train_gp_models_v3()
 
-rf_models, rf_scores, rf_importances = train_rf_models()
+rf_models, rf_scores, rf_importances = train_rf_models_v3()
 
 
 def gp_predict(key, t, c, s):
