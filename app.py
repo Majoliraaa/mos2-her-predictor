@@ -272,15 +272,17 @@ def recommend_method(layer_n, mo_s_ratio, ecsa_target, rct_target):
     if layer_n <= 3:
         mbe_score += 3
         reasons.append(
-            f"Layer # = {layer_n} (≤3L): atomic-layer precision requires MBE. "
-            f"CVD nucleation density depends on substrate position — cannot reliably "
-            f"control <5L films (Choudhury et al., Penn State review §2.2)"
+            f"Layer # = {layer_n} (≤3L): AFM + impact electrochemistry confirmed 1–3 trilayers "
+            f"give lowest HER onset (−0.10 V vs RHE, Manyepedza et al. J. Phys. Chem. C 2022). "
+            f"DFT: fewer layers → lower tunneling barrier. MBE required for atomic-layer precision "
+            f"(Choudhury et al. §2.3; CVD cannot reliably control <5L)"
         )
     elif layer_n <= 6:
         mbe_score += 1
         reasons.append(
-            f"Layer # = {layer_n} (4–6L): few-layer regime. MBE preferred for "
-            f"reproducible layer control; CVD possible but less reliable at this thickness"
+            f"Layer # = {layer_n} (4–6L): few-layer regime near Jeon N10 optimum (~5L). "
+            f"MBE preferred for reproducible layer control; CVD possible but less reliable "
+            f"(Choudhury et al. §2.2: nucleation density depends on substrate position)"
         )
 
     # Mo/S ratio threshold — CVD sulfur-rich conditions prevent intentional Mo-rich growth
@@ -336,7 +338,7 @@ def recommend_method(layer_n, mo_s_ratio, ecsa_target, rct_target):
 # ── Sidebar ───────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## ⚗️ MoS₂ HER Predictor")
-    st.markdown("**Based on:** Jeon et al., ACS Nano 2026  \n**Theory:** 12-paper framework")
+    st.markdown("**Based on:** Jeon et al., ACS Nano 2026  \n**Theory:** 13-paper framework")
     st.markdown("---")
 
     st.markdown("### 🔑 Key descriptors")
@@ -344,8 +346,8 @@ with st.sidebar:
 
     layer_n = st.slider("Layer #",
                         min_value=1, max_value=25, value=5, step=1,
-                        help="Number of MoS₂ layers. Derived from XRD Scherrer (002) crystallite size ÷ 0.615 nm/layer (Jeon et al. 2026). ⚠ Not directly measured — estimated descriptor.")
-    st.caption("⚠ Estimated — derived from XRD crystallite size (Jeon et al. 2026); awaiting AFM step-height confirmation from SI")
+                        help="Number of MoS₂ layers. Optimal ≤3 trilayers confirmed by AFM + impact electrochemistry (Manyepedza et al. J. Phys. Chem. C 2022). ⚠ Values per Jeon sample derived from XRD Scherrer (002) ÷ 0.615 nm/layer.")
+    st.caption("⚠ Estimated — XRD Scherrer derived; threshold ≤3L from Manyepedza et al. 2022 (AFM-confirmed)")
 
     mo_s_ratio = st.slider("Mo/S atomic ratio",
                            min_value=0.45, max_value=0.90, value=0.56, step=0.01,
@@ -1000,7 +1002,7 @@ elif page == "Feature importance":
 
 
 elif page == "Theoretical basis":
-    st.markdown("## Theoretical framework — 12 papers integrated")
+    st.markdown("## Theoretical framework — 13 papers integrated")
 
     papers = [
         ("1 · Hanslin, Jónsson & Akola — PCCP 2023 (DFT)",
@@ -1097,6 +1099,29 @@ elif page == "Theoretical basis":
          "Conclusion: the four key descriptors (Layer #, Mo/S ratio, ECSA, Physical props) "
          "can only be independently tuned by MBE — CVD can achieve stoichiometric, thick-film "
          "conditions but cannot access the Mo-rich, few-layer regime that optimizes HER."),
+        ("13 · Manyepedza, Courtney, Snowden, Jones & Rees — J. Phys. Chem. C 2022 "
+         "(Impact electrochemistry: Layer # as HER activity descriptor)",
+         "Direct experimental validation that Layer # is a primary HER activity descriptor for MoS₂. "
+         "Using impact electrochemistry (single nanoparticles colliding with an electrode), the study "
+         "isolates the intrinsic catalytic properties of MoS₂ free from ensemble averaging effects. "
+         "Key findings: "
+         "(1) MoS₂ nanoparticles with 1–3 trilayers achieve HER onset potential of −0.10 V vs RHE "
+         "at pH 2 — confirmed as genuine HER by gas chromatography (H₂ identification). "
+         "This is among the lowest onset potentials reported for MoS₂ without precious metal loading. "
+         "(2) DFT establishes the mechanistic basis: fewer trilayers → lower tunneling barrier "
+         "for electron transport → lower overpotential. Quantitative relationship between layer count "
+         "and HER rate confirmed. "
+         "(3) AFM imaging directly confirmed the 1–3 trilayer thickness of active nanoplatelet "
+         "population — this is the primary experimental evidence that Layer # ≤3 is the optimal "
+         "regime, now used as the threshold in this tool's Chemical/Physical recommendation logic. "
+         "(4) XPS confirmed chemical composition (2H phase), XRD confirmed crystal structure. "
+         "(5) Electrodeposited MoS₂ (chemical method) was stable at −0.29 V vs RHE in H₂SO₄ "
+         "but with onset ~0.19 V higher than the nanoparticulate few-layer form, directly "
+         "quantifying the performance gap between chemical and physical/nanostructured synthesis. "
+         "Relevance to Jeon et al.: confirms that the N-series optimum at MoS-N10 (~5 layers, "
+         "estimated from Scherrer XRD) is in the few-layer regime where layer-dependent kinetics "
+         "are most favorable. The Layer # ≤3 threshold in the MBE recommendation logic of this "
+         "tool is directly supported by this paper's AFM + impact electrochemistry data."),
     ]
 
     for title, body in papers:
@@ -1120,11 +1145,11 @@ elif page == "Theoretical basis":
             'Film thickness proxy → edge/basal site ratio',
         ],
         'Optimal value': ['<1.8', '<12', '60–100', '>7', '<70', '≈ 0',
-                          '0.55–0.72 (Mo⁰/MoS₂ coexistence)', '≤5 (few-layer, N10 regime)'],
+                          '0.55–0.72 (Mo⁰/MoS₂ coexistence)', '≤3 trilayers (Manyepedza 2022) / ≤5L (Jeon N10)'],
         'Data source': ['✅ Jeon 2026', '✅ Jeon 2026', '✅ Jeon 2026',
                         '✅ Jeon 2026', '✅ Jeon 2026', 'DFT (Hanslin/Yang)',
                         '⚠ Scale: Sherwood 2024; values: estimated from Jeon XANES',
-                        '⚠ Derived: Jeon XRD Scherrer ÷ 0.615 nm/layer'],
+                        '⚠ Derived: Jeon XRD Scherrer ÷ 0.615 nm/layer; threshold: Manyepedza AFM 2022'],
         'Key paper': ['Hanslin et al.', 'Geng et al.', 'Muhyuddin et al.',
                       'Li/Voiry et al.', 'Zhu et al.', 'Yang et al.',
                       'Sherwood et al. 2024 (paper 11)', 'Jeon et al. 2026 (Fig. 1a, 2a)']
@@ -1153,7 +1178,7 @@ elif page == "About":
 
     ---
 
-    ### Theoretical framework (12 papers)
+    ### Theoretical framework (13 papers)
     | # | Reference | Key contribution |
     |---|-----------|-----------------|
     | 1 | Hanslin et al., PCCP 2023 | DFT: Mo edge sites, Raman proxy |
@@ -1166,8 +1191,9 @@ elif page == "About":
     | 8 | Integrated picture | Mechanistic convergence |
     | 9 | Tsai, Li, Park et al., Nat. Commun. 2017 | EC desulfurization, optimal vacancy conc. 12.5–15.6% |
     | 10 | Li, Qin, Ries & Voiry et al., ACS 2019 | Stage 1/2 vacancy framework, TOF ~2 s⁻¹ in KOH |
-    | 11 | Sherwood et al., ACS Nano 2024 | XPS 4-peak model: 2H/1T/MoS₂₋ₓ fingerprinting; Mo/S scale calibration (S/Mo 2.2→1.1) |
-    | 12 | Choudhury, Zhang, Al Balushi & Redwing, Penn State review | CVD vs MBE: independent flux control, layer precision, stoichiometry — scientific basis for Chemical/Physical recommendation |
+    | 11 | Sherwood et al., ACS Nano 2024 | XPS 4-peak model: 2H/1T/MoS₂₋ₓ fingerprinting; Mo/S scale (S/Mo 2.2→1.1) |
+    | 12 | Choudhury, Zhang, Al Balushi & Redwing, Penn State review | CVD vs MBE: independent flux control, layer precision, stoichiometry |
+    | 13 | Manyepedza, Courtney, Snowden, Jones & Rees, J. Phys. Chem. C 2022 | Impact electrochemistry: 1–3 trilayers = optimal HER; AFM-confirmed Layer # threshold |
 
     ---
 
