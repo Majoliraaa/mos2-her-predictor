@@ -100,8 +100,8 @@ FEATURE_RANGES = {
     'temp':       (500, 1000, 800, 50),
     'cycles':     (1, 100, 10, 1),
     's_thick':    (1.0, 12.0, 3.0, 0.5),
-    'layer_n':    (1, 15, 4, 1),
-    'mo_s_ratio': (0.45, 0.80, 0.55, 0.01),
+    'layer_n':    (1, 25, 5, 1),
+    'mo_s_ratio': (0.45, 0.90, 0.56, 0.01),
 }
 EXPERIMENTAL_RANGES = {
     'temp':       (600, 800),
@@ -123,6 +123,7 @@ def train_gp_models():
     Features are standardised before fitting.
     """
     X = df[FEATURES].values.astype(float)
+    n_feat = X.shape[1]  # dynamic — currently 5 features
 
     gp_models, gp_scores, scalers_X, scalers_y, loo_stds = {}, {}, {}, {}, {}
     loo = LeaveOneOut()
@@ -136,8 +137,8 @@ def train_gp_models():
 
         kernel = (
             C(1.0, (1e-3, 1e3))
-            * Matern(length_scale=[1.0, 1.0, 1.0],
-                     length_scale_bounds=[(0.01, 100)] * 3,
+            * Matern(length_scale=[1.0] * n_feat,
+                     length_scale_bounds=[(0.01, 100)] * n_feat,
                      nu=2.5)
             + WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-5, 10))
         )
@@ -152,10 +153,11 @@ def train_gp_models():
 
             gp_loo = GaussianProcessRegressor(
                 kernel=C(1.0, (1e-3, 1e3))
-                       * Matern(length_scale=[1.0]*3,
-                                length_scale_bounds=[(0.01,100)]*3, nu=2.5)
+                       * Matern(length_scale=[1.0] * n_feat,
+                                length_scale_bounds=[(0.01, 100)] * n_feat,
+                                nu=2.5)
                        + WhiteKernel(noise_level=0.1,
-                                     noise_level_bounds=(1e-5,10)),
+                                     noise_level_bounds=(1e-5, 10)),
                 n_restarts_optimizer=5, normalize_y=False, alpha=1e-6
             )
             gp_loo.fit(X_tr_s, y_tr_s)
@@ -887,9 +889,11 @@ elif page == "Feature importance":
     fig3 = px.bar(sub_imp, x='Feature', y='Importance',
                   color='Feature',
                   color_discrete_map={
-                      FEATURE_LABELS['temp']: '#378ADD',
-                      FEATURE_LABELS['cycles']: '#1D9E75',
-                      FEATURE_LABELS['s_thick']: '#BA7517',
+                      FEATURE_LABELS['temp']:       '#378ADD',
+                      FEATURE_LABELS['cycles']:     '#1D9E75',
+                      FEATURE_LABELS['s_thick']:    '#BA7517',
+                      FEATURE_LABELS['layer_n']:    '#9B59B6',
+                      FEATURE_LABELS['mo_s_ratio']: '#E84040',
                   },
                   title=f"Feature importance for {TARGETS[target_sel2][0]}",
                   labels={'Importance': 'Relative importance (0–1)'})
@@ -899,7 +903,7 @@ elif page == "Feature importance":
 
     # All properties heatmap
     st.markdown("### Feature importance — all properties")
-    heat_data = np.array([[rf_importances[k][i] for i in range(3)] for k in TARGETS])
+    heat_data = np.array([[rf_importances[k][i] for i in range(len(FEATURES))] for k in TARGETS])
     heat_df = pd.DataFrame(heat_data,
                            index=[TARGETS[k][0] for k in TARGETS],
                            columns=[FEATURE_LABELS[f] for f in FEATURES])
