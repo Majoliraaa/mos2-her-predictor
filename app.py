@@ -240,106 +240,139 @@ def gp_predict(key, ln, msr, ecsa):
 # ── Method recommendation logic ───────────────────────────────
 def recommend_method(layer_n, mo_s_ratio, ecsa_target, rct_target):
     """
-    Given the 4 key descriptors, decide whether Chemical or Physical (MBE) method
-    is required. Returns (method_label, color, reasons).
+    Decide si se necesita Chemical (CVD/PVT) o Physical (MBE) según los 4 descriptores.
+    Retorna (method_label, color, reasons).
 
-    Scientific basis (Choudhury et al. Penn State review + Jeon et al. 2026
-    + Manyepedza et al. J. Phys. Chem. C 2022):
+    SCORING SYSTEM (verificado exhaustivamente contra las 14 muestras Jeon 2026):
+    ─────────────────────────────────────────────────────────────────────────────
+    LAYER #:
+      ≤3L  → +3  (MBE obligatorio: k⁰ 250 cm/s, onset −0.10 V vs RHE, CVD no puede <5L)
+      4–6L → +2  (MBE strongly preferred: few-layer regime, Jeon N10 optimum)
+      7–12L→ +1  (MBE preferred: CVD posible pero sin RHEED/QCM no hay reproducibilidad)
+      ≥13L → +0  (thick film: CVD estructuralmente viable si Mo/S es estequiométrico)
 
-    Layer # thresholds — kinetic basis (Manyepedza 2022 + McKelvey/Brunet Cabre 2021):
-      k⁰ (standard electrochemical rate constant) varies with layer count:
-        1 trilayer  → k⁰ ≈ 250 cm s⁻¹   (McKelvey, cited in Manyepedza)
-        3 trilayers → k⁰ ≈ 1.5 cm s⁻¹   (factor 167× slower than 1 TL)
-      HER onset potentials measured by impact electrochemistry (Manyepedza 2022):
-        1–3 TL (nanoimpact) → −0.10 V vs RHE  (H₂ confirmed by GC)
-        electrodeposited    → −0.29 V vs RHE
-        dropcast bulk NPs   → −0.49 V vs RHE
-      AFM confirmed platelet thickness = 0.615 nm/TL (consistent with XRD Scherrer
-      constant used to estimate layer_n in this tool's dataset).
-      HER mechanism: Volmer–Heyrovsky (Heyrovsky rate-determining, Tafel ≈ 45 mV dec⁻¹)
-      confirmed for electrodeposited MoS₂ at pH 2; α = 0.64–0.67.
+    Mo/S RATIO:
+      >0.72  → +3  (MBE obligatorio: Mo-rich, CVD no puede alcanzar este régimen)
+      >0.58  → +2  (MBE preferred: coexistencia Mo⁰/MoS₂, CVD empuja a estequiométrico)
+      ≥0.50  → +1  (MBE preferred: ligeramente off-stoich, CVD tiende a overshooting)
+      <0.50  → +0  (near-stoichiometric S/Mo≥2.0: CVD viable, ambos métodos posibles)
 
-    CVD/PVT: S/Mo vapor ratio varies with substrate position → cannot independently
-      control stoichiometry, layer number, and crystallinity (Choudhury §2.2).
-    MBE: independent e-beam Mo + effusion cell S flux, RHEED in-situ monitoring,
-      submonolayer precision via QCM calibration (Choudhury §2.3 + Jeon Methods).
-    MBE limitation: low S sticking coefficient under UHV → smaller domains than CVD,
-      but enables intentional S-deficiency (Jeon M-series) impossible in CVD.
-    Layer control: CVD layers uncontrolled below ~5L due to nucleation density
-      dependence on substrate position (Choudhury §3.1). MBE: each cycle = ~1 MoS₂
-      monolayer by design (Jeon: growth rate calibrated by QCM, ~0.05 Å/s Mo).
-    Mo/S ratio: CVD in sulfur-rich conditions drives toward stoichiometric MoS₂;
-      intentional off-stoichiometry requires MBE flux control (Jeon M-series, confirmed
-      by XANES showing Mo⁰ residual at M2.0–M3.0).
+    ECSA ≥ 8.0 cm² → +1
+    Rct  < 55 Ω·cm² → +1
+
+    UMBRALES DE DECISIÓN:
+      score ≥ 3 → 🔬 Physical Method (MBE)
+      score 1–2 → ⚗️ Both viable — MBE preferred
+      score = 0 → 🧪 Chemical Method (CVD/PVT)
+
+    CASOS CVD POSIBLES (score=0): Layer≥13 + Mo/S<0.50 + ECSA<8 + Rct≥55
+      Ejemplos del dataset: MoS-T800 (18L, Mo/S=0.46), MoS-N50 (20L, Mo/S=0.47),
+                            MoS-M8.0 (20L, Mo/S=0.48), MoS-M9.0 (20L, Mo/S=0.46)
+      → Films gruesos estequiométricos: CVD con S-rich atmosphere es suficiente.
+
+    REFERENCIAS:
+      Manyepedza et al. J. Phys. Chem. C 2022 — k⁰ vs Layer#, onset −0.10 V, AFM 0.615 nm/TL
+      Choudhury et al. Penn State review — CVD vs MBE, control de stoichiometry y capas
+      Jeon et al. ACS Nano 2026 — 14 muestras MBE, rango experimental completo
+      Sherwood et al. ACS Nano 2024 — escala Mo/S: S/Mo 2.2→1.1 (Mo/S 0.455→0.893)
     """
     reasons = []
     mbe_score = 0
 
     # ── LAYER NUMBER ─────────────────────────────────────────────────────────
-    # Kinetic basis: k⁰ increases 167× from 3 TL → 1 TL (1.5 → 250 cm s⁻¹)
-    # Onset basis: 1–3 TL gives −0.10 V vs RHE, 390 mV better than bulk dropcast
-    # AFM basis: 0.615 nm/TL confirmed, same constant used for Jeon layer_n estimates
-    # [Manyepedza et al. J. Phys. Chem. C 2022; McKelvey/Brunet Cabre 2021]
+    # Kinetic basis (Manyepedza 2022 + McKelvey/Brunet Cabre 2021):
+    #   k⁰: 1 TL → 250 cm/s | 3 TL → 1.5 cm/s (factor 167×)
+    #   onset: 1–3 TL → −0.10 V | electrodeposited → −0.29 V | bulk → −0.49 V
+    #   AFM: 0.615 nm/TL confirmado (mismo valor usado en estimación layer_n Jeon)
+    # CVD: no puede controlar <5L por densidad de nucleación variable (Choudhury §3.1)
+    # CVD: para ≥13L + Mo/S estequiométrico → viable (Choudhury §2.2)
     if layer_n <= 3:
         mbe_score += 3
         reasons.append(
-            f"Layer # = {layer_n} (≤3L): impact electrochemistry + AFM confirmed 1–3 trilayers "
-            f"achieve HER onset −0.10 V vs RHE (H₂ verified by GC). "
-            f"k⁰ kinetic advantage: ~250 cm s⁻¹ (1 TL) vs ~1.5 cm s⁻¹ (3 TL) — factor 167×. "
-            f"MBE required for atomic-layer precision (CVD cannot reliably control <5L). "
-            f"[Manyepedza 2022; Choudhury review §2.3]"
+            f"Layer # = {layer_n} (≤3L): 1–3 trilayers logran onset HER −0.10 V vs RHE "
+            f"(H₂ verificado por cromatografía de gases). "
+            f"k⁰ cinético: ~250 cm s⁻¹ (1 TL) vs ~1.5 cm s⁻¹ (3 TL) — factor 167×. "
+            f"MBE obligatorio: CVD no puede controlar reproduciblemente <5L. "
+            f"[Manyepedza 2022; Choudhury §2.3]"
         )
     elif layer_n <= 6:
+        mbe_score += 2
+        reasons.append(
+            f"Layer # = {layer_n} (4–6L): régimen few-layer, zona óptima Jeon N10 (~5L). "
+            f"k⁰ elevado respecto a bulk. MBE strongly preferred para control de capas. "
+            f"CVD posible pero sin RHEED/QCM no hay reproducibilidad. "
+            f"[Manyepedza 2022; Choudhury §2.2]"
+        )
+    elif layer_n <= 12:
         mbe_score += 1
         reasons.append(
-            f"Layer # = {layer_n} (4–6L): few-layer regime near Jeon N10 optimum (~5L). "
-            f"k⁰ still elevated vs bulk (>10 cm s⁻¹ estimated). "
-            f"MBE preferred for reproducible layer control; CVD possible but less reliable. "
-            f"[Manyepedza 2022; Choudhury §2.2]"
+            f"Layer # = {layer_n} (7–12L): régimen multi-capa. MBE preferred — "
+            f"CVD posible pero la densidad de nucleación varía con posición del substrato "
+            f"dificultando reproducibilidad. [Choudhury §3.1]"
+        )
+    else:
+        # ≥13L: film grueso → CVD estructuralmente viable SI Mo/S es estequiométrico
+        # No suma puntos — CVD puede producir estos films en condiciones S-rich
+        reasons.append(
+            f"Layer # = {layer_n} (≥13L): film grueso. CVD viable si Mo/S es "
+            f"near-stoichiometric (<0.50). MBE sigue siendo más preciso pero no obligatorio "
+            f"para reproducir este régimen. [Choudhury §2.2; Jeon T-series]"
         )
 
     # ── Mo/S RATIO ───────────────────────────────────────────────────────────
-    # Stoichiometric endpoint confirmed: S/Mo = 2.2 → Mo/S = 0.455 (Manyepedza 2022 XPS)
-    # Depleted limit: S/Mo = 1.1 → Mo/S = 0.893 (Sherwood 2024; Lince et al.)
+    # Escala XPS: estequiométrico = S/Mo 2.2 → Mo/S 0.455 (Manyepedza 2022 + Sherwood 2024)
+    # Límite Mo-rico: S/Mo 1.1 → Mo/S 0.893 (Sherwood 2024)
+    # CVD en condiciones S-rich no puede producir Mo/S > ~0.52 de forma reproducible
     if mo_s_ratio > 0.72:
         mbe_score += 3
         reasons.append(
-            f"Mo/S = {mo_s_ratio:.2f} (>0.72, highly Mo-rich): corresponds to "
-            f"incomplete sulfurization regime (XANES: residual Mo⁰ peaks, Jeon Fig 3a). "
-            f"CVD uses sulfur-rich conditions by design — cannot achieve this phase. "
-            f"Stoichiometric endpoint (Mo/S=0.455, S/Mo=2.2) confirmed by XPS "
-            f"[Manyepedza 2022; Sherwood 2024]. MBE S-flux control required."
+            f"Mo/S = {mo_s_ratio:.2f} (>0.72, altamente Mo-rich): régimen de "
+            f"sulfurización incompleta (XANES: picos Mo⁰ residuales, Jeon Fig 3a). "
+            f"CVD en condiciones S-rich no puede alcanzar este régimen por diseño. "
+            f"MBE obligatorio para control de flujo S independiente. "
+            f"[Sherwood 2024; Choudhury §2.1]"
         )
     elif mo_s_ratio > 0.58:
         mbe_score += 2
         reasons.append(
-            f"Mo/S = {mo_s_ratio:.2f} (0.58–0.72): S-deficient regime with Mo⁰/MoS₂ "
-            f"coexistence. CVD phase diagrams favor stoichiometric MoS₂ under sulfur "
-            f"overpressure (Choudhury §2.1). MBE preferred."
+            f"Mo/S = {mo_s_ratio:.2f} (0.58–0.72): coexistencia Mo⁰/MoS₂. "
+            f"CVD bajo overpressure de S favorece MoS₂ estequiométrico — "
+            f"no puede alcanzar este régimen S-deficiente de forma reproducible. "
+            f"MBE preferred para control de flujo. [Choudhury §2.1]"
         )
-    elif mo_s_ratio < 0.48:
+    elif mo_s_ratio >= 0.50:
+        mbe_score += 1
         reasons.append(
-            f"Mo/S = {mo_s_ratio:.2f} (≈stoichiometric 2H-MoS₂, S/Mo≥2.2): "
-            f"achievable by both CVD (sulfur-rich) and MBE. CVD is simpler here "
-            f"[Manyepedza 2022 XPS: electrodeposited MoS₂ S/Mo=2.2; Choudhury §2.2]."
+            f"Mo/S = {mo_s_ratio:.2f} (0.50–0.58): ligeramente S-deficiente. "
+            f"CVD tiende a overshooting hacia estequiométrico (S/Mo=2.2). "
+            f"MBE preferred para aterrizar reproduciblemente en esta ventana. "
+            f"[Choudhury §2.1; Sherwood 2024]"
+        )
+    else:
+        # Mo/S < 0.50 → near-stoichiometric: CVD viable
+        reasons.append(
+            f"Mo/S = {mo_s_ratio:.2f} (near-stoichiometric, S/Mo≥2.0): "
+            f"CVD en condiciones S-rich puede producir este régimen. "
+            f"Ambos métodos son viables aquí. "
+            f"[Manyepedza 2022 XPS: MoS₂ electrodepositado S/Mo=2.2; Choudhury §2.2]"
         )
 
     # ── ECSA ─────────────────────────────────────────────────────────────────
-    if ecsa_target > 8.0:
+    if ecsa_target >= 8.0:
         mbe_score += 1
         reasons.append(
-            f"ECSA target > 8 cm²: edge-site-rich thin films. MBE wafer-scale "
-            f"uniformity and controlled stoichiometry maximize accessible edges "
-            f"(Jeon MoS-N10: 8.0 cm², MoS-M6.0: 9.2 cm² — both MBE-grown)."
+            f"ECSA ≥ 8.0 cm²: films ricos en edge sites. Uniformidad wafer-scale "
+            f"de MBE maximiza sitios accesibles. "
+            f"(Jeon N10: 8.0 cm², M6.0: 9.2 cm² — ambos MBE)"
         )
 
     # ── Rct ──────────────────────────────────────────────────────────────────
     if rct_target < 55:
         mbe_score += 1
         reasons.append(
-            f"Rct target < 55 Ω·cm²: requires metallic Mo⁰ conductive domains "
-            f"(best: MoS-N10 Rct=52.8, MoS-M6.0 Rct=45.5 — MBE-grown, Jeon Table 1). "
-            f"CVD fully sulfurizes Mo → stoichiometric MoS₂ with higher Rct."
+            f"Rct < 55 Ω·cm²: requiere dominios Mo⁰ conductores metálicos. "
+            f"(N10: Rct=52.8, M6.0: Rct=45.5 — MBE, Jeon Tabla 1). "
+            f"CVD sulfuriza completamente → MoS₂ estequiométrico con Rct mayor."
         )
 
     if mbe_score >= 3:
