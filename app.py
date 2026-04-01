@@ -871,11 +871,9 @@ elif page == "Feature importance":
     fig3 = px.bar(sub_imp, x='Feature', y='Importance',
                   color='Feature',
                   color_discrete_map={
-                      FEATURE_LABELS['temp']:       '#378ADD',
-                      FEATURE_LABELS['cycles']:     '#1D9E75',
-                      FEATURE_LABELS['s_thick']:    '#BA7517',
                       FEATURE_LABELS['layer_n']:    '#9B59B6',
                       FEATURE_LABELS['mo_s_ratio']: '#E84040',
+                      FEATURE_LABELS['ecsa']:       '#1D9E75',
                   },
                   title=f"Feature importance for {TARGETS[target_sel2][0]}",
                   labels={'Importance': 'Relative importance (0–1)'})
