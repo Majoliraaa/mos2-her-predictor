@@ -80,7 +80,6 @@ df = load_data()
 TARGETS = {
     'eta': ('Overpotential η', 'V', 'max'),
     'tafel': ('Tafel slope', 'mV/dec', 'min'),
-    'ecsa': ('ECSA', 'cm²', 'max'),
     'rct': ('Rct', 'Ω·cm²', 'min'),
     'raman': ('Raman A₁g/E₂g', '', 'min'),
     'resistivity': ('Resistivity', 'Ω·cm', 'min'),
@@ -88,16 +87,16 @@ TARGETS = {
     'tof_mass': ('TOF (mass)', 'nmol µg⁻¹s⁻¹', 'max'),
 }
 
-FEATURES = ['temp', 'cycles', 's_thick']
+# ── The 3 key descriptors (whiteboard: Layer #, Mo/S ratio, ECSA) ─────────────
+# These are the PRIMARY inputs to the GP — what the user controls.
+# The GP predicts all HER performance metrics from these 3 descriptors.
+# ECSA is real measured data (Jeon Table 1). Layer # and Mo/S are estimated.
+FEATURES = ['layer_n', 'mo_s_ratio', 'ecsa']
 FEATURE_LABELS = {
-    'temp':    'Annealing temperature (°C)',
-    'cycles':  'Deposition cycles',
-    's_thick': 'S-layer thickness (Å)',
+    'layer_n':    'Layer # (estimated from XRD Scherrer)',
+    'mo_s_ratio': 'Mo/S atomic ratio (estimated from XANES)',
+    'ecsa':       'ECSA (cm²) — measured, Jeon 2026',
 }
-# layer_n and mo_s_ratio are STRUCTURAL DESCRIPTORS for the method badge only.
-# They are NOT GP features: per-sample values are estimated (not measured in Jeon),
-# and their variation in the dataset is too correlated with cycles/s_thick to
-# add independent information to the GP model.
 
 SERIES_COLORS = {'T': '#378ADD', 'N': '#1D9E75', 'M': '#BA7517'}
 
@@ -213,9 +212,9 @@ with st.spinner("Training Gaussian Process models… (first load only)"):
 rf_models, rf_scores, rf_importances = train_rf_models_v3()
 
 
-def gp_predict(key, t, c, s):
+def gp_predict(key, ln, msr, ecsa):
     """Predict mean and calibrated 95% credible interval using the GP."""
-    X_new = np.array([[t, c, s]])
+    X_new = np.array([[ln, msr, ecsa]])
     sx = scalers_X[key]
     sy = scalers_y[key]
     gp = gp_models[key]
@@ -326,43 +325,55 @@ with st.sidebar:
     st.markdown("## ⚗️ MoS₂ HER Predictor")
     st.markdown("**Based on:** Jeon et al., ACS Nano 2026  \n**Theory:** 13-paper framework")
     st.markdown("---")
-
     st.markdown("### 🔑 Key descriptors")
-    st.caption("Move these sliders → method badge updates live.")
+    st.caption("Mueve los sliders → el predictor y el badge se actualizan en tiempo real.")
 
     layer_n = st.slider(
         "Layer #",
-        min_value=1, max_value=25, value=5, step=1,
-        help="Number of MoS₂ layers. ≤3 trilayers = optimal HER onset "
-             "(Manyepedza et al. J. Phys. Chem. C 2022, AFM-confirmed). "
-             "⚠ Per-sample values derived from XRD Scherrer ÷ 0.615 nm/layer."
+        min_value=1, max_value=20, value=5, step=1,
+        help="Número de capas MoS₂. ≤3 trilayers = onset HER óptimo "
+             "(Manyepedza et al. 2022, AFM-confirmed). "
+             "⚠ Estimado de XRD Scherrer (002) ÷ 0.615 nm/capa (Jeon 2026)."
     )
-    st.caption("⚠ Estimated · threshold ≤3L: Manyepedza 2022")
+    st.caption("⚠ Estimado · rango datos: 2–20 capas")
 
     mo_s_ratio = st.slider(
         "Mo/S atomic ratio",
         min_value=0.45, max_value=0.90, value=0.56, step=0.01,
-        help="2H-MoS₂ stoichiometric = ~0.455 (XPS S/Mo≈2.2). "
-             "Mo-rich limit ~0.893. Optimal 0.55–0.72 = Mo⁰/MoS₂ coexistence. "
-             "⚠ Per-sample values estimated from Jeon XANES/EXAFS."
+        help="MoS₂ estequiométrico = ~0.455 (XPS S/Mo≈2.2, Sherwood 2024). "
+             "Límite Mo-rico = ~0.893. Óptimo 0.55–0.72 = coexistencia Mo⁰/MoS₂. "
+             "⚠ Estimado de XANES/EXAFS (Jeon 2026)."
     )
-    st.caption("⚠ Estimated · scale: Sherwood 2024 / Jeon XANES")
+    st.caption("⚠ Estimado · rango datos: 0.46–0.82")
 
-    ecsa_target = st.slider(
-        "Target ECSA (cm²)",
+    ecsa_val = st.slider(
+        "ECSA (cm²)",
         min_value=2.0, max_value=12.0, value=8.0, step=0.5,
-        help="Electrochemically active surface area you want to achieve. "
-             "The GP predicts the actual ECSA from synthesis parameters — "
-             "this slider sets your target for the method recommendation. "
-             "✅ Real ECSA data: Jeon et al. 2026 Table 1 (range 3.5–9.2 cm²)."
+        help="Área electroactiva. ✅ Dato real medido en Jeon et al. 2026 Tabla 1. "
+             "Rango experimental: 3.5–9.2 cm². N10=8.0, M6.0=9.2 (mejores muestras)."
     )
-    st.caption("✅ Real data range 3.5–9.2 cm² · Jeon 2026 Table 1")
+    st.caption("✅ Dato real · rango Jeon: 3.5–9.2 cm²")
 
-    # ── Live method badge (updates as sliders move) ────────────
-    # Use ecsa_target for method logic; Rct threshold fixed at optimal
-    # (best Rct from Jeon: MoS-M6.0 = 45.5 Ω·cm²)
+    # ── Closest sample match ───────────────────────────────────
+    df_dist = df.copy()
+    df_dist['dist'] = df.apply(lambda r: np.sqrt(
+        ((r.layer_n    - layer_n)    / 18)    ** 2 +
+        ((r.mo_s_ratio - mo_s_ratio) / 0.36)  ** 2 +
+        ((r.ecsa       - ecsa_val)   / 6.0)   ** 2
+    ), axis=1)
+    best_match = df_dist.nsmallest(1, 'dist').iloc[0]
+    dist_val = df_dist['dist'].min()
+
+    if dist_val < 0.15:
+        st.success(f"✓ Muestra más cercana: **{best_match['sample']}**")
+    elif dist_val < 0.40:
+        st.info(f"≈ Más cercana: **{best_match['sample']}** (interpolando)")
+    else:
+        st.warning(f"⚠ Extrapolando — más cercana: **{best_match['sample']}**")
+
+    # ── Live method badge ──────────────────────────────────────
     method_label, method_color, method_reasons = recommend_method(
-        layer_n, mo_s_ratio, ecsa_target, rct_target=55.0
+        layer_n, mo_s_ratio, ecsa_val, rct_target=55.0
     )
     st.markdown("---")
     st.markdown(
@@ -371,41 +382,15 @@ with st.sidebar:
         f"<div style='font-size:1.15em; font-weight:800; color:{method_color};'>"
         f"{method_label}</div>"
         f"<div style='font-size:0.78em; color:#888; margin-top:4px;'>"
-        f"Layer # {layer_n} · Mo/S {mo_s_ratio:.2f} · ECSA ≥{ecsa_target:.1f} cm²"
+        f"Layer #{layer_n} · Mo/S {mo_s_ratio:.2f} · ECSA {ecsa_val:.1f} cm²"
         f"</div></div>",
         unsafe_allow_html=True
     )
-    with st.expander("Why this method?", expanded=False):
+    with st.expander("¿Por qué este método?", expanded=False):
         for r in method_reasons:
             st.caption(f"• {r}")
         if not method_reasons:
-            st.caption("Near-stoichiometric, thick-film — chemical CVD is sufficient.")
-
-    st.markdown("---")
-    st.markdown("### Advanced synthesis controls")
-    st.caption("Used by the GP predictor for full electrochemical estimates.")
-    temp    = st.slider("Annealing temperature (°C)", 500, 1000, 800, 50)
-    cycles  = st.slider("Deposition cycles", 1, 100, 10, 1)
-    s_thick = st.slider("S-layer thickness (Å)", 1.0, 12.0, 3.0, 0.5)
-
-    in_range = (
-        600 <= temp <= 800 and 5 <= cycles <= 50 and
-        2.0 <= s_thick <= 9.0 and 1 <= layer_n <= 9 and
-        0.50 <= mo_s_ratio <= 0.72
-    )
-    exact = df[
-        (df.temp == temp) & (df.cycles == cycles) & (df.s_thick == s_thick) &
-        (df.layer_n == layer_n) & (df.mo_s_ratio.round(2) == round(mo_s_ratio, 2))
-    ]
-    if len(exact) > 0:
-        st.success(f"✓ Exact match: **{exact.iloc[0]['sample']}**")
-    elif in_range:
-        st.info("≈ Interpolation — calibrated GP intervals")
-    else:
-        out_dims = sum([temp<600 or temp>800, cycles<5 or cycles>50,
-                        s_thick<2 or s_thick>9, layer_n<1 or layer_n>9,
-                        mo_s_ratio<0.50 or mo_s_ratio>0.72])
-        st.warning(f"⚠ Extrapolation ({out_dims}D outside range)")
+            st.caption("Condiciones near-stoichiometric — CVD es suficiente.")
 
     st.markdown("---")
     st.markdown("### Navigation")
@@ -414,11 +399,11 @@ with st.sidebar:
                     label_visibility="collapsed")
 
 # ── Prediction helper ─────────────────────────────────────────
-def predict_all(t, c, s):
-    """Returns GP mean for all targets."""
+def predict_all(ln, msr, ecsa):
+    """Returns GP mean for all targets given the 3 key descriptors."""
     result = {}
     for key in TARGETS:
-        mean, _, _, _ = gp_predict(key, t, c, s)
+        mean, _, _, _ = gp_predict(key, ln, msr, ecsa)
         result[key] = mean
     return result
 
@@ -505,72 +490,69 @@ if page == "Predictor":
         f"padding:14px 20px; border-radius:10px; margin-bottom:16px;'>"
         f"<span style='font-size:1.4em; font-weight:800; color:{method_color};'>{method_label}</span>"
         f"<span style='color:#888; font-size:0.9em; margin-left:16px;'>"
-        f"Layer # = {layer_n} · Mo/S = {mo_s_ratio:.2f} · "
-        f"Target ECSA = {ecsa_target:.1f} cm²</span>"
+        f"Layer # {layer_n} · Mo/S {mo_s_ratio:.2f} · ECSA {ecsa_val:.1f} cm²</span>"
         f"</div>",
         unsafe_allow_html=True
     )
-    with st.expander("📋 Method reasoning", expanded=False):
+    with st.expander("📋 ¿Por qué este método?", expanded=False):
         for r in method_reasons:
             st.markdown(f"• {r}")
         if not method_reasons:
-            st.markdown("• Near-stoichiometric, thick-film conditions — CVD is sufficient.")
+            st.markdown("• Condiciones near-stoichiometric — CVD es suficiente.")
 
-    st.markdown(
-        f"GP prediction with: **{temp}°C** · **{cycles} cycles** · **S = {s_thick} Å**"
+    st.caption(
+        f"Muestra más cercana en base de datos: **{best_match['sample']}** "
+        f"(T={best_match['temp']:.0f}°C, {best_match['cycles']:.0f} ciclos, "
+        f"S={best_match['s_thick']:.1f}Å)"
     )
 
-    if len(exact) > 0:
-        vals = {k: exact.iloc[0][k] for k in TARGETS}
-        source = "Real data from Jeon et al. table"
+    # ── GP prediction using the 3 descriptors ─────────────────
+    # Find closest sample for exact match check
+    if dist_val < 0.05:
+        vals = {k: best_match[k] for k in TARGETS}
+        source = f"Datos reales — {best_match['sample']} (Jeon et al. 2026 Tabla 1)"
         gp_ci = None
     else:
-        vals = predict_all(temp, cycles, s_thick)
-        source = "Gaussian Process prediction (calibrated 95% credible interval)"
+        vals = predict_all(layer_n, mo_s_ratio, ecsa_val)
+        source = "Predicción GP (intervalo de credibilidad 95% calibrado)"
         gp_ci = {}
         for key in TARGETS:
-            mean, lower, upper, std = gp_predict(key, temp, cycles, s_thick)
+            mean, lower, upper, std = gp_predict(key, layer_n, mo_s_ratio, ecsa_val)
             gp_ci[key] = {'mean': mean, 'lower': lower, 'upper': upper, 'std': std}
 
-    st.caption(f"Source: {source}")
+    st.caption(f"Fuente: {source}")
 
-    # ── 4 Key Descriptors Banner ──────────────────────────────
+    # ── Key Descriptors panel ─────────────────────────────────
     st.markdown("### 🔑 Key descriptors")
-    vac_pct = estimate_vacancy_concentration(s_thick, cycles)
-    stage_txt, stage_color = classify_vacancy_stage(vac_pct)
     kd1, kd2, kd3, kd4 = st.columns(4)
     with kd1:
         ln_icon = "🟢" if layer_n <= 3 else ("🟡" if layer_n <= 6 else "🔴")
-        st.metric("Layer #", f"{layer_n} layers")
-        st.caption(f"{ln_icon} Optimal ≤3L (Manyepedza 2022) · MBE: ≤6L")
-        st.caption("⚠ Estimated · XRD Scherrer ÷ 0.615 nm")
+        st.metric("Layer #", f"{layer_n} capas")
+        st.caption(f"{ln_icon} Óptimo ≤3L · Manyepedza 2022")
+        st.caption("⚠ Estimado · XRD Scherrer")
     with kd2:
-        msr_icon = "🟢" if 0.55 <= mo_s_ratio <= 0.70 else ("🟡" if mo_s_ratio < 0.80 else "🔴")
+        msr_icon = "🟢" if 0.55 <= mo_s_ratio <= 0.72 else ("🟡" if mo_s_ratio < 0.82 else "🔴")
         st.metric("Mo/S ratio", f"{mo_s_ratio:.2f}")
-        st.caption(f"{msr_icon} Optimal 0.55–0.72 (Mo⁰/MoS₂ coexistence)")
-        st.caption("⚠ Estimated · scale: Sherwood 2024")
+        st.caption(f"{msr_icon} Óptimo 0.55–0.72 (Mo⁰/MoS₂)")
+        st.caption("⚠ Estimado · Sherwood 2024")
     with kd3:
-        ecsa_pred = vals['ecsa']
-        ecsa_delta = ecsa_pred - ecsa_target
-        ecsa_icon = "🟢" if ecsa_pred >= ecsa_target else ("🟡" if ecsa_pred >= ecsa_target * 0.8 else "🔴")
-        delta_str = f"{ecsa_delta:+.1f} vs target"
-        st.metric("ECSA predicted", f"{ecsa_pred:.1f} cm²",
-                  delta=delta_str,
-                  delta_color="normal" if ecsa_delta >= 0 else "inverse")
-        st.caption(f"{ecsa_icon} Target: {ecsa_target:.1f} cm² · ✅ Jeon 2026")
+        ecsa_icon = "🟢" if ecsa_val >= 7 else ("🟡" if ecsa_val >= 5 else "🔴")
+        st.metric("ECSA", f"{ecsa_val:.1f} cm²")
+        st.caption(f"{ecsa_icon} Óptimo ≥7 cm² · Jeon 2026")
+        st.caption("✅ Dato real")
     with kd4:
         resist_val = vals['resistivity']
         rct_val    = vals['rct']
         phys_icon  = "🟢" if resist_val < 12 and rct_val < 70 else ("🟡" if resist_val < 17 else "🔴")
         st.metric("Physical props", f"ρ={resist_val:.1f} Ω·cm")
-        st.caption(f"{phys_icon} Rct={rct_val:.0f} Ω·cm² · target ρ<12, Rct<70")
-        st.caption("✅ Real data · Jeon 2026 Table 1")
+        st.caption(f"{phys_icon} Rct={rct_val:.0f} Ω·cm²")
+        st.caption("✅ Predicho por GP · Jeon 2026")
 
     st.markdown("---")
 
-    # Metrics grid
+    # Metrics grid — predicts HER performance from the 3 descriptors
     cols = st.columns(4)
-    metrics_order = ['eta','tafel','ecsa','rct','raman','resistivity','tof_ecsa','tof_mass']
+    metrics_order = ['eta','tafel','rct','raman','resistivity','tof_ecsa','tof_mass']
     for i, key in enumerate(metrics_order):
         name, unit, better = TARGETS[key]
         v = vals[key]
@@ -602,9 +584,12 @@ if page == "Predictor":
 
     st.markdown("---")
 
-    # Derived descriptors (expanded with layer + phase)
-    der = get_derived(vals, temp, cycles, s_thick, layer_n, mo_s_ratio)
-    st.markdown("### Derived structural descriptors (theory-based)")
+    # Derived descriptors — use best_match synthesis params for theory interpretation
+    bm_temp   = best_match['temp']
+    bm_cycles = best_match['cycles']
+    bm_sthick = best_match['s_thick']
+    der = get_derived(vals, bm_temp, bm_cycles, bm_sthick, layer_n, mo_s_ratio)
+    st.markdown("### Descriptores estructurales derivados (base teórica)")
     c1, c2, c3, c4 = st.columns(4)
 
     with c1:
@@ -628,26 +613,21 @@ if page == "Predictor":
         st.markdown("**Dominant HER mechanism**")
         st.markdown(f"{der['mechanism']}  \n*Muhyuddin review + Yang et al.*")
         st.markdown("**MBE strain activation**")
-        strain_active = s_thick <= 6 and cycles <= 20
+        strain_active = bm_sthick <= 6 and bm_cycles <= 20
         strain_txt = "Active — tensile strain activates Vs/VMoS3 sites" if strain_active else "Limited — stoichiometric regime reduces strain benefit"
         st.markdown(f"{strain_txt}  \n*Yang et al. RSC Adv. 2023*")
 
     st.markdown("---")
-    # Closest samples
-    st.markdown("### Closest samples in database")
-    df_dist = df.copy()
-    df_dist['dist'] = df.apply(
-        lambda r: np.sqrt(
-            ((r.temp - temp) / 400) ** 2 +
-            ((r.cycles - cycles) / 95) ** 2 +
-            ((r.s_thick - s_thick) / 10) ** 2 +
-            ((r.layer_n - layer_n) / 14) ** 2 +
-            ((r.mo_s_ratio - mo_s_ratio) / 0.35) ** 2
-        ),
-        axis=1)
-    closest = df_dist.nsmallest(3, 'dist')
+    st.markdown("### 3 muestras más cercanas en la base de datos")
+    df_dist2 = df.copy()
+    df_dist2['dist'] = df.apply(lambda r: np.sqrt(
+        ((r.layer_n    - layer_n)    / 18)   ** 2 +
+        ((r.mo_s_ratio - mo_s_ratio) / 0.36) ** 2 +
+        ((r.ecsa       - ecsa_val)   / 6.0)  ** 2
+    ), axis=1)
+    closest = df_dist2.nsmallest(3, 'dist')
     show_cols = ['sample','series','temp','cycles','s_thick','layer_n','mo_s_ratio',
-                 'eta','tafel','ecsa','rct','raman','resistivity']
+                 'ecsa','eta','tafel','rct','raman','resistivity']
     st.dataframe(closest[show_cols].reset_index(drop=True), use_container_width=True)
 
 
@@ -927,16 +907,18 @@ elif page == "Feature importance":
                                key='pd_feat')
 
     rf_model = rf_models[pd_target]
-    ranges = {'temp':    np.linspace(500, 1000, 60),
-              'cycles':  np.linspace(1, 100, 60),
-              's_thick': np.linspace(1, 12, 60)}
-    defaults = {'temp': 800, 'cycles': 10, 's_thick': 3.0}
+    ranges = {
+        'layer_n':    np.linspace(1, 20, 60),
+        'mo_s_ratio': np.linspace(0.45, 0.90, 60),
+        'ecsa':       np.linspace(2.0, 12.0, 60),
+    }
+    defaults = {'layer_n': 5, 'mo_s_ratio': 0.56, 'ecsa': 8.0}
 
     x_range = ranges[pd_feature]
     X_pd = np.array([[
-        x if pd_feature == 'temp'    else defaults['temp'],
-        x if pd_feature == 'cycles'  else defaults['cycles'],
-        x if pd_feature == 's_thick' else defaults['s_thick'],
+        x if pd_feature == 'layer_n'    else defaults['layer_n'],
+        x if pd_feature == 'mo_s_ratio' else defaults['mo_s_ratio'],
+        x if pd_feature == 'ecsa'       else defaults['ecsa'],
     ] for x in x_range])
 
     # GP predictions with uncertainty band
@@ -954,9 +936,9 @@ elif page == "Feature importance":
     exp_y = df[pd_target].values
 
     in_range_mask = {
-        'temp':    (x_range >= 600) & (x_range <= 800),
-        'cycles':  (x_range >= 5)   & (x_range <= 50),
-        's_thick': (x_range >= 2)   & (x_range <= 9),
+        'layer_n':    (x_range >= 2)    & (x_range <= 20),
+        'mo_s_ratio': (x_range >= 0.46) & (x_range <= 0.82),
+        'ecsa':       (x_range >= 3.5)  & (x_range <= 9.2),
     }
 
     fig5 = go.Figure()
