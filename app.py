@@ -12,1269 +12,1145 @@ from sklearn.metrics import r2_score, mean_absolute_error
 import warnings
 warnings.filterwarnings('ignore')
 
-# ── Page config ──────────────────────────────────────────────
+# ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="MoS₂ HER Trend Predictor",
+    page_title="MoS₂ HER Predictor",
     page_icon="⚗️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# ── Data ─────────────────────────────────────────────────────
+# ── Custom CSS ────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'IBM Plex Sans', sans-serif;
+}
+h1, h2, h3 { font-family: 'IBM Plex Mono', monospace; letter-spacing: -0.03em; }
+
+.method-badge {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 12px 20px; border-radius: 4px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 1.1em; font-weight: 600;
+    border-left: 5px solid; margin-bottom: 8px;
+}
+.score-bar-wrap { margin: 6px 0 2px 0; }
+.score-bar-bg {
+    background: rgba(255,255,255,0.08); border-radius: 2px;
+    height: 8px; width: 100%; overflow: hidden;
+}
+.score-bar-fill { height: 8px; border-radius: 2px; transition: width 0.4s; }
+.descriptor-card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px; padding: 14px 16px; margin-bottom: 8px;
+}
+.descriptor-card .label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72em; color: #888; text-transform: uppercase; letter-spacing: 0.08em;
+}
+.descriptor-card .value {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 1.5em; font-weight: 600; margin: 2px 0;
+}
+.descriptor-card .note { font-size: 0.78em; color: #aaa; }
+.ref-chip {
+    display: inline-block; background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 3px; padding: 1px 7px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.72em; color: #aaa;
+    margin: 2px;
+}
+.section-header {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75em; text-transform: uppercase;
+    letter-spacing: 0.12em; color: #666;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding-bottom: 6px; margin: 20px 0 12px 0;
+}
+.stMetric label { font-family: 'IBM Plex Mono', monospace !important; font-size: 0.78em !important; }
+.stMetric [data-testid="stMetricValue"] { font-family: 'IBM Plex Mono', monospace !important; }
+</style>
+""", unsafe_allow_html=True)
+
+
+# ── Data ──────────────────────────────────────────────────────────────────────
 @st.cache_data
 def load_data():
     data = {
-        'sample': ['MoS-T600','MoS-T700','MoS-T800',
-                   'MoS-N5','MoS-N10','MoS-N20','MoS-N30','MoS-N50',
-                   'MoS-M2.0','MoS-M2.5','MoS-M3.0','MoS-M6.0','MoS-M8.0','MoS-M9.0'],
-        'series': ['T','T','T','N','N','N','N','N','M','M','M','M','M','M'],
-        'temp':   [600,700,800,800,800,800,800,800,800,800,800,800,800,800],
-        'cycles': [50,50,50,5,10,20,30,50,50,50,50,50,50,50],
-        's_thick':[9.0,9.0,9.0,3.0,3.0,3.0,3.0,3.0,2.0,2.5,3.0,6.0,8.0,9.0],
-        # ── Layer # ────────────────────────────────────────────────────────────────
-        # ⚠ ESTIMATED — not directly reported in Jeon et al. 2026.
-        # Derived from XRD Scherrer crystallite size (002) ÷ 0.615 nm/layer (d₀₀₂ of 2H-MoS₂).
-        # 0.615 nm/layer confirmed by AFM in Manyepedza et al. J. Phys. Chem. C 2022 (Fig. 9B):
-        #   smallest platelets measured at 0.6–0.7 nm (1 TL) and 1.3–1.4 nm (2 TL) on mica.
-        #   Bulk MoS₂: 0.615 nm/TL | isolated nanosheet: 0.67 nm/TL (Fan et al. JACS 2016).
-        # T-series: (002) crystallite = 7.2 nm (T600) → 10.8 nm (T800) per Jeon Table 1 / Fig 1a.
-        # N-series: (002) crystallite = 3.3 nm (N10) → 12.1 nm (N50) per Jeon Fig 2a caption.
-        # M-series: same cycles as N50 (50 cycles) → same layer estimate as T800/N50.
-        # This is a lower-bound estimate; actual layer count may differ due to growth mode.
-        # PENDING: confirm with AFM or TEM per sample (check Jeon et al. SI).
-        'layer_n':[12, 14, 18, 2, 5, 9, 13, 20, 20, 20, 20, 20, 20, 20],
-        # ── Mo/S atomic ratio ──────────────────────────────────────────────────────
-        # ⚠ ESTIMATED — XPS not reported per sample in Jeon et al. 2026.
-        # Scale corrected using XPS literature: stoichiometric 2H-MoS₂ = S/Mo ~2.2 → Mo/S ~0.455
-        # (Baker et al. Surf. Interface Anal. 2001; pristine XPS S/Mo = 2.2).
-        # Sulfur-depleted limit: S/Mo ~1.12 → Mo/S ~0.893 (Lince et al. via Baker et al.).
-        # Confirmed by Manyepedza 2022 (XPS wide scan): electrodeposited MoS₂ Mo/S = 1:2.2
-        #   → Mo/S ratio = 0.455, consistent with stoichiometric 2H-MoS₂ scale used here.
-        # Series M: M2.0 = most Mo-rich (incomplete sulfurization confirmed by XANES/EXAFS
-        # showing residual Mo⁰ peaks, Jeon Fig 3a,c); M9.0 = near-stoichiometric.
-        # Series N: N10 = few cycles → thinner, less sulfurized interface layer.
-        # Series T: all s_thick=9.0 Å → near-stoichiometric; slight Mo-enrichment at lower T.
-        'mo_s_ratio':[0.49,0.48,0.46,0.62,0.56,0.52,0.50,0.47,0.82,0.76,0.65,0.52,0.48,0.46],
-        'raman':  [2.41,2.34,2.29,1.01,1.63,1.85,1.78,1.99,1.70,1.97,1.99,2.05,2.24,2.29],
-        'resistivity':[15.98,16.52,19.26,7.75,8.99,11.08,11.40,12.45,9.01,9.50,12.45,15.09,17.14,19.26],
-        'ecsa':   [6.7,6.5,3.5,4.5,8.0,6.5,6.3,6.5,4.3,6.3,6.5,9.2,4.7,3.5],
-        'loading':[24.7,24.7,24.7,1.9,3.7,7.4,11.1,18.5,17.5,18.0,18.5,21.6,23.7,24.7],
-        'eta':    [-0.46,-0.48,-0.58,-0.43,-0.33,-0.39,-0.35,-0.35,-0.58,-0.49,-0.35,-0.35,-0.52,-0.58],
-        'tafel':  [136,257,297,161,80,105,93,114,484,253,114,91,223,297],
-        'rct':    [98.4,113.0,193.3,136.5,52.8,76.9,59.0,64.0,161.2,104.5,64.0,45.5,124.5,193.3],
-        'tof_ecsa':[5.7,5.2,5.7,9.9,13.0,11.4,9.9,8.3,6.2,4.6,8.3,6.7,5.1,5.7],
-        'tof_mass':[1.6,1.4,0.8,22.9,24.9,9.9,5.5,2.9,1.6,1.6,2.9,2.9,1.0,0.8],
+        'sample':      ['MoS-T600','MoS-T700','MoS-T800',
+                        'MoS-N5','MoS-N10','MoS-N20','MoS-N30','MoS-N50',
+                        'MoS-M2.0','MoS-M2.5','MoS-M3.0','MoS-M6.0','MoS-M8.0','MoS-M9.0'],
+        'series':      ['T','T','T','N','N','N','N','N','M','M','M','M','M','M'],
+        'temp':        [600,700,800,800,800,800,800,800,800,800,800,800,800,800],
+        'cycles':      [50,50,50,5,10,20,30,50,50,50,50,50,50,50],
+        's_thick':     [9.0,9.0,9.0,3.0,3.0,3.0,3.0,3.0,2.0,2.5,3.0,6.0,8.0,9.0],
+        'layer_n':     [12,14,18,2,5,9,13,20,20,20,20,20,20,20],
+        'mo_s_ratio':  [0.49,0.48,0.46,0.62,0.56,0.52,0.50,0.47,0.82,0.76,0.65,0.52,0.48,0.46],
+        'raman':       [2.41,2.34,2.29,1.01,1.63,1.85,1.78,1.99,1.70,1.97,1.99,2.05,2.24,2.29],
+        'resistivity': [15.98,16.52,19.26,7.75,8.99,11.08,11.40,12.45,9.01,9.50,12.45,15.09,17.14,19.26],
+        'ecsa':        [6.7,6.5,3.5,4.5,8.0,6.5,6.3,6.5,4.3,6.3,6.5,9.2,4.7,3.5],
+        'loading':     [24.7,24.7,24.7,1.9,3.7,7.4,11.1,18.5,17.5,18.0,18.5,21.6,23.7,24.7],
+        'eta':         [-0.46,-0.48,-0.58,-0.43,-0.33,-0.39,-0.35,-0.35,-0.58,-0.49,-0.35,-0.35,-0.52,-0.58],
+        'tafel':       [136,257,297,161,80,105,93,114,484,253,114,91,223,297],
+        'rct':         [98.4,113.0,193.3,136.5,52.8,76.9,59.0,64.0,161.2,104.5,64.0,45.5,124.5,193.3],
+        'tof_ecsa':    [5.7,5.2,5.7,9.9,13.0,11.4,9.9,8.3,6.2,4.6,8.3,6.7,5.1,5.7],
+        'tof_mass':    [1.6,1.4,0.8,22.9,24.9,9.9,5.5,2.9,1.6,1.6,2.9,2.9,1.0,0.8],
     }
     return pd.DataFrame(data)
-
-# ── Estimated descriptor metadata (shown as badges in UI) ────────────────────
-ESTIMATED_DESCRIPTORS = {
-    'layer_n': {
-        'label': 'Layer #',
-        'source': 'Derived from XRD Scherrer (002) ÷ 0.615 nm/layer — not directly measured in Jeon et al. 2026. '
-                  '0.615 nm/TL confirmed by AFM: Manyepedza et al. J. Phys. Chem. C 2022, Fig. 9B.',
-        'confidence': 'low',
-    },
-    'mo_s_ratio': {
-        'label': 'Mo/S ratio',
-        'source': 'Scale from XPS literature (Baker et al. 2001; Sherwood 2024); '
-                  'stoichiometric endpoint (Mo/S=0.455, S/Mo=2.2) confirmed by Manyepedza 2022 XPS wide scan. '
-                  'Values per sample estimated from s_thick and XANES phase data in Jeon et al. 2026.',
-        'confidence': 'medium',
-    },
-}
 
 df = load_data()
 
 TARGETS = {
-    'eta': ('Overpotential η', 'V', 'max'),
-    'tafel': ('Tafel slope', 'mV/dec', 'min'),
-    'rct': ('Rct', 'Ω·cm²', 'min'),
-    'raman': ('Raman A₁g/E₂g', '', 'min'),
-    'resistivity': ('Resistivity', 'Ω·cm', 'min'),
-    'tof_ecsa': ('TOF (ECSA)', 'nmol cm⁻²s⁻¹', 'max'),
-    'tof_mass': ('TOF (mass)', 'nmol µg⁻¹s⁻¹', 'max'),
+    'eta':         ('Overpotential η', 'V',             'max'),
+    'tafel':       ('Tafel slope',      'mV/dec',        'min'),
+    'rct':         ('Rct',              'Ω·cm²',         'min'),
+    'raman':       ('Raman A₁g/E₂g',   '',              'min'),
+    'resistivity': ('Resistivity',      'Ω·cm',          'min'),
+    'tof_ecsa':    ('TOF (ECSA)',        'nmol/cm²/s',    'max'),
+    'tof_mass':    ('TOF (mass)',        'nmol/µg/s',     'max'),
 }
 
-# ── The 3 key descriptors (whiteboard: Layer #, Mo/S ratio, ECSA) ─────────────
-# These are the PRIMARY inputs to the GP — what the user controls.
-# The GP predicts all HER performance metrics from these 3 descriptors.
-# ECSA is real measured data (Jeon Table 1). Layer # and Mo/S are estimated.
 FEATURES = ['layer_n', 'mo_s_ratio', 'ecsa']
 FEATURE_LABELS = {
-    'layer_n':    'Layer # (estimated from XRD Scherrer)',
-    'mo_s_ratio': 'Mo/S atomic ratio (estimated from XANES)',
-    'ecsa':       'ECSA (cm²) — measured, Jeon 2026',
+    'layer_n':    'Layer #',
+    'mo_s_ratio': 'Mo/S ratio',
+    'ecsa':       'ECSA (cm²)',
+}
+FEATURE_RANGES = {
+    'layer_n':    (1, 20),
+    'mo_s_ratio': (0.45, 0.90),
+    'ecsa':       (2.0, 12.0),
 }
 
-SERIES_COLORS = {'T': '#378ADD', 'N': '#1D9E75', 'M': '#BA7517'}
+SERIES_COLORS  = {'T': '#4E9AF1', 'N': '#2DCE89', 'M': '#F5A623'}
+SERIES_LABELS  = {'T': 'T-series (Temp)', 'N': 'N-series (Cycles)', 'M': 'M-series (S-thick)'}
 
-# ── Gaussian Process Models ───────────────────────────────────
+METHOD_COLORS  = {
+    'mbe':  '#2DCE89',
+    'both': '#F5A623',
+    'cvd':  '#4E9AF1',
+}
+
+
+# ── GP Models ─────────────────────────────────────────────────────────────────
 @st.cache_resource
-def train_gp_models_v3():
-    """
-    Train one GP per target on the full dataset.
-    v3: uses 3 synthesis features (temp, cycles, s_thick) only.
-    layer_n and mo_s_ratio moved to descriptor-only role.
-    """
+def train_models():
     X = df[FEATURES].values.astype(float)
-    n_feat = X.shape[1]  # 3 features
-
-    gp_models, gp_scores, scalers_X, scalers_y, loo_stds = {}, {}, {}, {}, {}
+    n = X.shape[1]
+    gp_models, gp_scores, sx_dict, sy_dict, loo_stds_dict = {}, {}, {}, {}, {}
+    rf_models, rf_scores, rf_imps = {}, {}, {}
     loo = LeaveOneOut()
 
     for key in TARGETS:
         y = df[key].values.astype(float)
-
-        # Scalers fit on full data (used for final model)
         sx = StandardScaler().fit(X)
-        sy = StandardScaler().fit(y.reshape(-1, 1))
+        sy = StandardScaler().fit(y.reshape(-1,1))
 
-        kernel = (
-            C(1.0, (1e-3, 1e3))
-            * Matern(length_scale=[1.0] * n_feat,
-                     length_scale_bounds=[(0.01, 100)] * n_feat,
-                     nu=2.5)
-            + WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-5, 10))
-        )
+        kernel = (C(1.0,(1e-3,1e3))
+                  * Matern(length_scale=[1.0]*n,
+                           length_scale_bounds=[(0.01,100)]*n, nu=2.5)
+                  + WhiteKernel(noise_level=0.1, noise_level_bounds=(1e-5,10)))
 
-        # --- LOO to get calibrated std ---
         loo_means, loo_stds_list = [], []
         for tr, te in loo.split(X):
-            sx_loo = StandardScaler().fit(X[tr])
-            sy_loo = StandardScaler().fit(y[tr].reshape(-1, 1))
-            X_tr_s = sx_loo.transform(X[tr])
-            y_tr_s = sy_loo.transform(y[tr].reshape(-1, 1)).ravel()
-
-            gp_loo = GaussianProcessRegressor(
-                kernel=C(1.0, (1e-3, 1e3))
-                       * Matern(length_scale=[1.0] * n_feat,
-                                length_scale_bounds=[(0.01, 100)] * n_feat,
-                                nu=2.5)
-                       + WhiteKernel(noise_level=0.1,
-                                     noise_level_bounds=(1e-5, 10)),
-                n_restarts_optimizer=5, normalize_y=False, alpha=1e-6
-            )
-            gp_loo.fit(X_tr_s, y_tr_s)
-            X_te_s = sx_loo.transform(X[te])
-            m_s, std_s = gp_loo.predict(X_te_s, return_std=True)
-            m = sy_loo.inverse_transform(m_s.reshape(-1,1)).ravel()[0]
-            std = std_s[0] * sy_loo.scale_[0]
-            loo_means.append(m)
-            loo_stds_list.append(std)
+            sx_l = StandardScaler().fit(X[tr])
+            sy_l = StandardScaler().fit(y[tr].reshape(-1,1))
+            gp_l = GaussianProcessRegressor(
+                kernel=C(1.0,(1e-3,1e3))*Matern(length_scale=[1.0]*n,
+                         length_scale_bounds=[(0.01,100)]*n,nu=2.5)
+                       +WhiteKernel(0.1,(1e-5,10)),
+                n_restarts_optimizer=5, normalize_y=False, alpha=1e-6)
+            gp_l.fit(sx_l.transform(X[tr]),
+                     sy_l.transform(y[tr].reshape(-1,1)).ravel())
+            m_s, std_s = gp_l.predict(sx_l.transform(X[te]), return_std=True)
+            loo_means.append(sy_l.inverse_transform(m_s.reshape(-1,1)).ravel()[0])
+            loo_stds_list.append(std_s[0]*sy_l.scale_[0])
 
         loo_means = np.array(loo_means)
-        r2  = r2_score(y, loo_means)
-        mae = mean_absolute_error(y, loo_means)
+        avg_err   = np.mean(np.abs(y - loo_means))
+        avg_std   = np.mean(loo_stds_list)
+        calib     = avg_err/avg_std if avg_std > 0 else 1.0
 
-        # Calibration factor: ratio of average abs error to average predicted std
-        avg_err = np.mean(np.abs(y - loo_means))
-        avg_std = np.mean(loo_stds_list)
-        calib   = avg_err / avg_std if avg_std > 0 else 1.0
+        gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10,
+                                      normalize_y=False, alpha=1e-6)
+        gp.fit(sx.transform(X), sy.transform(y.reshape(-1,1)).ravel())
 
-        # Final GP trained on all data
-        gp_full = GaussianProcessRegressor(
-            kernel=kernel, n_restarts_optimizer=10,
-            normalize_y=False, alpha=1e-6
-        )
-        gp_full.fit(sx.transform(X),
-                    sy.transform(y.reshape(-1,1)).ravel())
+        gp_models[key]     = gp
+        gp_scores[key]     = {'r2':r2_score(y,loo_means),
+                              'mae':mean_absolute_error(y,loo_means),
+                              'loo_preds':loo_means, 'calib':calib}
+        sx_dict[key]       = sx
+        sy_dict[key]       = sy
+        loo_stds_dict[key] = np.array(loo_stds_list)
 
-        gp_models[key]  = gp_full
-        gp_scores[key]  = {'r2': r2, 'mae': mae, 'loo_preds': loo_means,
-                            'calib': calib}
-        scalers_X[key]  = sx
-        scalers_y[key]  = sy
-        loo_stds[key]   = np.array(loo_stds_list)
-
-    return gp_models, gp_scores, scalers_X, scalers_y, loo_stds
-
-
-# ── Random Forest — kept only for Feature Importance page ────
-@st.cache_resource
-def train_rf_models_v3():
-    X = df[FEATURES].values
-    models, scores, importances = {}, {}, {}
-    loo = LeaveOneOut()
-    for key in TARGETS:
-        y = df[key].values
+        # RF
         rf = RandomForestRegressor(n_estimators=300, max_depth=4,
                                    min_samples_leaf=2, random_state=42)
         preds = np.zeros(len(y))
-        for tr, te in loo.split(X):
-            rf.fit(X[tr], y[tr])
-            preds[te] = rf.predict(X[te])
-        rf.fit(X, y)
-        models[key]      = rf
-        scores[key]      = {'r2': r2_score(y, preds),
-                            'mae': mean_absolute_error(y, preds),
-                            'loo_preds': preds}
-        importances[key] = rf.feature_importances_
-    return models, scores, importances
+        for tr,te in loo.split(X):
+            rf.fit(X[tr],y[tr]); preds[te]=rf.predict(X[te])
+        rf.fit(X,y)
+        rf_models[key] = rf
+        rf_scores[key] = {'r2':r2_score(y,preds),'mae':mean_absolute_error(y,preds),'loo_preds':preds}
+        rf_imps[key]   = rf.feature_importances_
+
+    return gp_models, gp_scores, sx_dict, sy_dict, loo_stds_dict, rf_models, rf_scores, rf_imps
+
+with st.spinner("Training GP + RF models… (first load only)"):
+    gp_models, gp_scores, sx_dict, sy_dict, loo_stds_dict, \
+    rf_models, rf_scores, rf_imps = train_models()
 
 
-# Train both — GP is primary, RF only for feature importance page
-with st.spinner("Training Gaussian Process models… (first load only)"):
-    gp_models, gp_scores, scalers_X, scalers_y, loo_stds = train_gp_models_v3()
+def gp_predict(key, ln, msr, ecsa_v):
+    X_new = np.array([[ln, msr, ecsa_v]])
+    sx = sx_dict[key]; sy = sy_dict[key]; gp = gp_models[key]
+    m_s, std_s = gp.predict(sx.transform(X_new), return_std=True)
+    mean  = sy.inverse_transform(m_s.reshape(-1,1)).ravel()[0]
+    std   = std_s[0]*sy.scale_[0]*gp_scores[key]['calib']
+    return mean, mean-1.96*std, mean+1.96*std, std
 
-rf_models, rf_scores, rf_importances = train_rf_models_v3()
+def predict_all(ln, msr, ecsa_v):
+    return {k: gp_predict(k, ln, msr, ecsa_v)[0] for k in TARGETS}
 
 
-def gp_predict(key, ln, msr, ecsa):
-    """Predict mean and calibrated 95% credible interval using the GP."""
-    X_new = np.array([[ln, msr, ecsa]])
-    sx = scalers_X[key]
-    sy = scalers_y[key]
-    gp = gp_models[key]
-
-    X_s = sx.transform(X_new)
-    m_s, std_s = gp.predict(X_s, return_std=True)
-
-    mean = sy.inverse_transform(m_s.reshape(-1,1)).ravel()[0]
-    std  = std_s[0] * sy.scale_[0] * gp_scores[key]['calib']
-
-    lower = mean - 1.96 * std
-    upper = mean + 1.96 * std
-    return mean, lower, upper, std
-
-# ── Method recommendation logic ───────────────────────────────
-def recommend_method(layer_n, mo_s_ratio, ecsa_target, rct_target):
+# ── CVD/MBE Scoring ───────────────────────────────────────────────────────────
+def score_method(layer_n, mo_s_ratio, ecsa_v, rct_v=None):
     """
-    Decide si se necesita Chemical (CVD/PVT) o Physical (MBE) según los 4 descriptores.
-    Retorna (method_label, color, reasons).
-
-    SCORING SYSTEM (verificado exhaustivamente contra las 14 muestras Jeon 2026):
-    ─────────────────────────────────────────────────────────────────────────────
-    LAYER #:
-      ≤3L  → +3  (MBE obligatorio: k⁰ 250 cm/s, onset −0.10 V vs RHE, CVD no puede <5L)
-      4–6L → +2  (MBE strongly preferred: few-layer regime, Jeon N10 optimum)
-      7–12L→ +1  (MBE preferred: CVD posible pero sin RHEED/QCM no hay reproducibilidad)
-      ≥13L → +0  (thick film: CVD estructuralmente viable si Mo/S es estequiométrico)
-
-    Mo/S RATIO:
-      >0.72  → +3  (MBE obligatorio: Mo-rich, CVD no puede alcanzar este régimen)
-      >0.58  → +2  (MBE preferred: coexistencia Mo⁰/MoS₂, CVD empuja a estequiométrico)
-      ≥0.50  → +1  (MBE preferred: ligeramente off-stoich, CVD tiende a overshooting)
-      <0.50  → +0  (near-stoichiometric S/Mo≥2.0: CVD viable, ambos métodos posibles)
-
-    ECSA ≥ 8.0 cm² → +1
-    Rct  < 55 Ω·cm² → +1
-
-    UMBRALES DE DECISIÓN:
-      score ≥ 3 → 🔬 Physical Method (MBE)
-      score 1–2 → ⚗️ Both viable — MBE preferred
-      score = 0 → 🧪 Chemical Method (CVD/PVT)
-
-    CASOS CVD POSIBLES (score=0): Layer≥13 + Mo/S<0.50 + ECSA<8 + Rct≥55
-      Ejemplos del dataset: MoS-T800 (18L, Mo/S=0.46), MoS-N50 (20L, Mo/S=0.47),
-                            MoS-M8.0 (20L, Mo/S=0.48), MoS-M9.0 (20L, Mo/S=0.46)
-      → Films gruesos estequiométricos: CVD con S-rich atmosphere es suficiente.
-
-    REFERENCIAS:
-      Manyepedza et al. J. Phys. Chem. C 2022 — k⁰ vs Layer#, onset −0.10 V, AFM 0.615 nm/TL
-      Choudhury et al. Penn State review — CVD vs MBE, control de stoichiometry y capas
-      Jeon et al. ACS Nano 2026 — 14 muestras MBE, rango experimental completo
-      Sherwood et al. ACS Nano 2024 — escala Mo/S: S/Mo 2.2→1.1 (Mo/S 0.455→0.893)
+    Returns (label, color_key, score, max_score, reasons_list).
+    Each reason is a dict: {criterion, points, max_points, ref, detail}.
     """
     reasons = []
-    mbe_score = 0
+    total   = 0
+    MAX     = 8   # 3 + 3 + 1 + 1
 
-    # ── LAYER NUMBER ─────────────────────────────────────────────────────────
-    # Kinetic basis (Manyepedza 2022 + McKelvey/Brunet Cabre 2021):
-    #   k⁰: 1 TL → 250 cm/s | 3 TL → 1.5 cm/s (factor 167×)
-    #   onset: 1–3 TL → −0.10 V | electrodeposited → −0.29 V | bulk → −0.49 V
-    #   AFM: 0.615 nm/TL confirmado (mismo valor usado en estimación layer_n Jeon)
-    # CVD: no puede controlar <5L por densidad de nucleación variable (Choudhury §3.1)
-    # CVD: para ≥13L + Mo/S estequiométrico → viable (Choudhury §2.2)
+    # Layer #
     if layer_n <= 3:
-        mbe_score += 3
-        reasons.append(
-            f"Layer # = {layer_n} (≤3L): 1–3 trilayers logran onset HER −0.10 V vs RHE "
-            f"(H₂ verificado por cromatografía de gases). "
-            f"k⁰ cinético: ~250 cm s⁻¹ (1 TL) vs ~1.5 cm s⁻¹ (3 TL) — factor 167×. "
-            f"MBE obligatorio: CVD no puede controlar reproduciblemente <5L. "
-            f"[Manyepedza 2022; Choudhury §2.3]"
-        )
+        pts = 3
+        detail = f"≤3L → onset −0.10 V vs RHE, k⁰ ~250 cm/s (vs 1.5 cm/s at 3L — 167× advantage)"
+        refs   = ["Manyepedza 2022", "Choudhury §2.3"]
     elif layer_n <= 6:
-        mbe_score += 2
-        reasons.append(
-            f"Layer # = {layer_n} (4–6L): régimen few-layer, zona óptima Jeon N10 (~5L). "
-            f"k⁰ elevado respecto a bulk. MBE strongly preferred para control de capas. "
-            f"CVD posible pero sin RHEED/QCM no hay reproducibilidad. "
-            f"[Manyepedza 2022; Choudhury §2.2]"
-        )
+        pts = 2
+        detail = f"4–6L few-layer: near-optimal zone (Jeon N10 ~5L is best N-series sample)"
+        refs   = ["Manyepedza 2022", "Choudhury §2.2"]
     elif layer_n <= 12:
-        mbe_score += 1
-        reasons.append(
-            f"Layer # = {layer_n} (7–12L): régimen multi-capa. MBE preferred — "
-            f"CVD posible pero la densidad de nucleación varía con posición del substrato "
-            f"dificultando reproducibilidad. [Choudhury §3.1]"
-        )
+        pts = 1
+        detail = f"7–12L multi-layer: CVD nucleation density unstable — MBE preferred"
+        refs   = ["Choudhury §3.1"]
     else:
-        # ≥13L: film grueso → CVD estructuralmente viable SI Mo/S es estequiométrico
-        # No suma puntos — CVD puede producir estos films en condiciones S-rich
-        reasons.append(
-            f"Layer # = {layer_n} (≥13L): film grueso. CVD viable si Mo/S es "
-            f"near-stoichiometric (<0.50). MBE sigue siendo más preciso pero no obligatorio "
-            f"para reproducir este régimen. [Choudhury §2.2; Jeon T-series]"
-        )
+        pts = 0
+        detail = f"≥13L thick film: CVD viable when Mo/S is near-stoichiometric"
+        refs   = ["Choudhury §2.2", "Jeon T-series"]
+    total += pts
+    reasons.append({'criterion':'Layer #','points':pts,'max':3,'refs':refs,'detail':detail})
 
-    # ── Mo/S RATIO ───────────────────────────────────────────────────────────
-    # Escala XPS: estequiométrico = S/Mo 2.2 → Mo/S 0.455 (Manyepedza 2022 + Sherwood 2024)
-    # Límite Mo-rico: S/Mo 1.1 → Mo/S 0.893 (Sherwood 2024)
-    # CVD en condiciones S-rich no puede producir Mo/S > ~0.52 de forma reproducible
+    # Mo/S ratio
     if mo_s_ratio > 0.72:
-        mbe_score += 3
-        reasons.append(
-            f"Mo/S = {mo_s_ratio:.2f} (>0.72, altamente Mo-rich): régimen de "
-            f"sulfurización incompleta (XANES: picos Mo⁰ residuales, Jeon Fig 3a). "
-            f"CVD en condiciones S-rich no puede alcanzar este régimen por diseño. "
-            f"MBE obligatorio para control de flujo S independiente. "
-            f"[Sherwood 2024; Choudhury §2.1]"
-        )
+        pts = 3
+        detail = f"Highly Mo-rich: XANES shows residual Mo⁰ peaks — CVD cannot reach this regime"
+        refs   = ["Sherwood 2024", "Choudhury §2.1"]
     elif mo_s_ratio > 0.58:
-        mbe_score += 2
-        reasons.append(
-            f"Mo/S = {mo_s_ratio:.2f} (0.58–0.72): coexistencia Mo⁰/MoS₂. "
-            f"CVD bajo overpressure de S favorece MoS₂ estequiométrico — "
-            f"no puede alcanzar este régimen S-deficiente de forma reproducible. "
-            f"MBE preferred para control de flujo. [Choudhury §2.1]"
-        )
+        pts = 2
+        detail = f"Mo⁰/MoS₂ coexistence zone: CVD S-overpressure pushes toward stoichiometric"
+        refs   = ["Choudhury §2.1"]
     elif mo_s_ratio >= 0.50:
-        mbe_score += 1
-        reasons.append(
-            f"Mo/S = {mo_s_ratio:.2f} (0.50–0.58): ligeramente S-deficiente. "
-            f"CVD tiende a overshooting hacia estequiométrico (S/Mo=2.2). "
-            f"MBE preferred para aterrizar reproduciblemente en esta ventana. "
-            f"[Choudhury §2.1; Sherwood 2024]"
-        )
+        pts = 1
+        detail = f"Slightly S-deficient: CVD overshoots toward S/Mo=2.2"
+        refs   = ["Sherwood 2024"]
     else:
-        # Mo/S < 0.50 → near-stoichiometric: CVD viable
-        reasons.append(
-            f"Mo/S = {mo_s_ratio:.2f} (near-stoichiometric, S/Mo≥2.0): "
-            f"CVD en condiciones S-rich puede producir este régimen. "
-            f"Ambos métodos son viables aquí. "
-            f"[Manyepedza 2022 XPS: MoS₂ electrodepositado S/Mo=2.2; Choudhury §2.2]"
-        )
+        pts = 0
+        detail = f"Near-stoichiometric (S/Mo≥2.0): CVD S-rich atmosphere sufficient"
+        refs   = ["Manyepedza 2022 XPS", "Choudhury §2.2"]
+    total += pts
+    reasons.append({'criterion':'Mo/S ratio','points':pts,'max':3,'refs':refs,'detail':detail})
 
-    # ── ECSA ─────────────────────────────────────────────────────────────────
-    if ecsa_target >= 8.0:
-        mbe_score += 1
-        reasons.append(
-            f"ECSA ≥ 8.0 cm²: films ricos en edge sites. Uniformidad wafer-scale "
-            f"de MBE maximiza sitios accesibles. "
-            f"(Jeon N10: 8.0 cm², M6.0: 9.2 cm² — ambos MBE)"
-        )
-
-    # ── Rct ──────────────────────────────────────────────────────────────────
-    if rct_target < 55:
-        mbe_score += 1
-        reasons.append(
-            f"Rct < 55 Ω·cm²: requiere dominios Mo⁰ conductores metálicos. "
-            f"(N10: Rct=52.8, M6.0: Rct=45.5 — MBE, Jeon Tabla 1). "
-            f"CVD sulfuriza completamente → MoS₂ estequiométrico con Rct mayor."
-        )
-
-    if mbe_score >= 3:
-        return "🔬 Physical Method (MBE)", "#1D9E75", reasons
-    elif mbe_score >= 1:
-        return "⚗️ Both viable — MBE preferred", "#BA7517", reasons
+    # ECSA
+    if ecsa_v >= 8.0:
+        pts = 1
+        detail = f"ECSA ≥8.0 cm²: MBE wafer-scale uniformity maximises accessible edge sites"
+        refs   = ["Jeon 2026 (N10: 8.0, M6.0: 9.2)"]
     else:
-        return "🧪 Chemical Method (CVD/PVT)", "#378ADD", reasons
+        pts = 0
+        detail = f"ECSA <8.0 cm²: no additional constraint on method"
+        refs   = []
+    total += pts
+    reasons.append({'criterion':'ECSA','points':pts,'max':1,'refs':refs,'detail':detail})
+
+    # Rct
+    rct_use = rct_v if rct_v is not None else gp_predict('rct', layer_n, mo_s_ratio, ecsa_v)[0]
+    if rct_use < 55:
+        pts = 1
+        detail = f"Rct={rct_use:.0f} Ω·cm² <55: needs metallic Mo⁰ domains — MBE flux control required"
+        refs   = ["Jeon 2026 (N10: 52.8, M6.0: 45.5)"]
+    else:
+        pts = 0
+        detail = f"Rct={rct_use:.0f} Ω·cm² ≥55: no additional constraint"
+        refs   = []
+    total += pts
+    reasons.append({'criterion':'Rct','points':pts,'max':1,'refs':refs,'detail':detail})
+
+    # Decision
+    if total >= 3:
+        label    = "🔬 Physical Method (MBE)"
+        col_key  = 'mbe'
+    elif total >= 1:
+        label    = "⚗️ Both viable — MBE preferred"
+        col_key  = 'both'
+    else:
+        label    = "🧪 Chemical Method (CVD/PVT)"
+        col_key  = 'cvd'
+
+    return label, col_key, total, MAX, reasons
 
 
-# ── Sidebar ───────────────────────────────────────────────────
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## ⚗️ MoS₂ HER Predictor")
-    st.markdown("**Based on:** Jeon et al., ACS Nano 2026  \n**Theory:** 13-paper framework")
-    st.markdown("---")
-    st.markdown("### 🔑 Key descriptors")
-    st.caption("Mueve los sliders → el predictor y el badge se actualizan en tiempo real.")
+    st.markdown("<div style='font-size:0.78em;color:#666;margin-bottom:16px;'>"
+                "Jeon et al. ACS Nano 2026 · 13-paper framework</div>",
+                unsafe_allow_html=True)
 
-    layer_n = st.slider(
-        "Layer #",
-        min_value=1, max_value=20, value=5, step=1,
-        help="Número de capas MoS₂. ≤3 trilayers = onset HER óptimo "
-             "(−0.10 V vs RHE, Manyepedza et al. J. Phys. Chem. C 2022, AFM + GC confirmed). "
-             "k⁰ cinético: 1 TL → 250 cm s⁻¹, 3 TL → 1.5 cm s⁻¹ (factor 167×). "
-             "⚠ Estimado de XRD Scherrer (002) ÷ 0.615 nm/capa (AFM: Manyepedza Fig. 9B)."
-    )
-    st.caption("⚠ Estimado · rango datos: 2–20 capas")
+    st.markdown('<div class="section-header">KEY DESCRIPTORS</div>', unsafe_allow_html=True)
+    st.caption("Move sliders → predictor updates in real time")
 
-    mo_s_ratio = st.slider(
-        "Mo/S atomic ratio",
-        min_value=0.45, max_value=0.90, value=0.56, step=0.01,
-        help="MoS₂ estequiométrico = ~0.455 (XPS S/Mo≈2.2, confirmado Manyepedza 2022 + Sherwood 2024). "
-             "Límite Mo-rico = ~0.893 (S/Mo=1.1, Sherwood 2024). "
-             "Óptimo 0.55–0.72 = coexistencia Mo⁰/MoS₂. "
-             "⚠ Estimado de XANES/EXAFS (Jeon 2026)."
-    )
-    st.caption("⚠ Estimado · rango datos: 0.46–0.82")
+    layer_n    = st.slider("Layer #", 1, 20, 5, 1,
+        help="⚠ Estimated from XRD Scherrer (002) ÷ 0.615 nm/layer (AFM: Manyepedza 2022).\n"
+             "≤3L: onset −0.10 V vs RHE, k⁰ ~250 cm/s.")
+    mo_s_ratio = st.slider("Mo/S atomic ratio", 0.45, 0.90, 0.56, 0.01,
+        help="⚠ Estimated from XANES/EXAFS (Jeon 2026).\n"
+             "Stoichiometric = 0.455 (S/Mo=2.2). Mo-rich limit = 0.893.")
+    ecsa_val   = st.slider("ECSA (cm²)", 2.0, 12.0, 8.0, 0.5,
+        help="✅ Measured in Jeon 2026. Range: 3.5–9.2 cm².")
 
-    ecsa_val = st.slider(
-        "ECSA (cm²)",
-        min_value=2.0, max_value=12.0, value=8.0, step=0.5,
-        help="Área electroactiva. ✅ Dato real medido en Jeon et al. 2026 Tabla 1. "
-             "Rango experimental: 3.5–9.2 cm². N10=8.0, M6.0=9.2 (mejores muestras)."
-    )
-    st.caption("✅ Dato real · rango Jeon: 3.5–9.2 cm²")
-
-    # ── Closest sample match ───────────────────────────────────
+    # Closest match
     df_dist = df.copy()
     df_dist['dist'] = df.apply(lambda r: np.sqrt(
-        ((r.layer_n    - layer_n)    / 18)    ** 2 +
-        ((r.mo_s_ratio - mo_s_ratio) / 0.36)  ** 2 +
-        ((r.ecsa       - ecsa_val)   / 6.0)   ** 2
-    ), axis=1)
-    best_match = df_dist.nsmallest(1, 'dist').iloc[0]
-    dist_val = df_dist['dist'].min()
+        ((r.layer_n    - layer_n)    / 18)    **2 +
+        ((r.mo_s_ratio - mo_s_ratio) / 0.36)  **2 +
+        ((r.ecsa       - ecsa_val)   / 6.0)   **2), axis=1)
+    best_match = df_dist.nsmallest(1,'dist').iloc[0]
+    dist_val   = df_dist['dist'].min()
 
     if dist_val < 0.15:
-        st.success(f"✓ Muestra más cercana: **{best_match['sample']}**")
+        st.success(f"✓ Closest sample: **{best_match['sample']}**")
     elif dist_val < 0.40:
-        st.info(f"≈ Más cercana: **{best_match['sample']}** (interpolando)")
+        st.info(f"≈ Nearest: **{best_match['sample']}** (interpolating)")
     else:
-        st.warning(f"⚠ Extrapolando — más cercana: **{best_match['sample']}**")
+        st.warning(f"⚠ Extrapolating — nearest: **{best_match['sample']}**")
 
-    # ── Live method badge ──────────────────────────────────────
-    method_label, method_color, method_reasons = recommend_method(
-        layer_n, mo_s_ratio, ecsa_val, rct_target=55.0
-    )
-    st.markdown("---")
+    # Method badge
+    m_label, m_col_key, m_score, m_max, m_reasons = score_method(layer_n, mo_s_ratio, ecsa_val)
+    m_color = METHOD_COLORS[m_col_key]
+    pct     = int(m_score / m_max * 100)
+
+    st.markdown('<div class="section-header">SYNTHESIS METHOD</div>', unsafe_allow_html=True)
     st.markdown(
-        f"<div style='background:{method_color}22; border-left:4px solid {method_color}; "
-        f"padding:10px 12px; border-radius:6px;'>"
-        f"<div style='font-size:1.15em; font-weight:800; color:{method_color};'>"
-        f"{method_label}</div>"
-        f"<div style='font-size:0.78em; color:#888; margin-top:4px;'>"
-        f"Layer #{layer_n} · Mo/S {mo_s_ratio:.2f} · ECSA {ecsa_val:.1f} cm²"
-        f"</div></div>",
-        unsafe_allow_html=True
-    )
-    with st.expander("¿Por qué este método?", expanded=False):
-        for r in method_reasons:
-            st.caption(f"• {r}")
-        if not method_reasons:
-            st.caption("Condiciones near-stoichiometric — CVD es suficiente.")
-
-    st.markdown("---")
-    st.markdown("### Navigation")
-    page = st.radio("", ["Predictor", "Inverse Predictor", "Trend analysis",
-                         "Feature importance", "Theoretical basis", "About"],
-                    label_visibility="collapsed")
-
-# ── Prediction helper ─────────────────────────────────────────
-def predict_all(ln, msr, ecsa):
-    """Returns GP mean for all targets given the 3 key descriptors."""
-    result = {}
-    for key in TARGETS:
-        mean, _, _, _ = gp_predict(key, ln, msr, ecsa)
-        result[key] = mean
-    return result
-
-
-def estimate_vacancy_concentration(s_thick, cycles):
-    """
-    Estimate surface S-vacancy concentration (%) based on synthesis parameters.
-    Uses Tsai et al. 2017 framework: vacancy concentration scales with S-deficiency.
-    Lower s_thick and fewer cycles → higher vacancy concentration.
-    Reference: stoichiometric (s_thick=9, cycles=50) ≈ 0–5% vacancies.
-    """
-    s_norm = (s_thick - 2.0) / 7.0
-    c_norm = (min(cycles, 50) - 5) / 45.0
-    vac_pct = (1 - 0.5 * s_norm - 0.5 * c_norm) * 60.0
-    return max(0.0, min(90.0, vac_pct))
-
-
-def classify_vacancy_stage(vac_pct):
-    """
-    Li & Voiry et al. ACS 2019: two-stage HER framework.
-    Stage 1 (<~20%): isolated point defects, moderate improvement.
-    Stage 2 (>~50%): large undercoordinated Mo regions, max TOF ~2 s⁻¹ at -160 mV in KOH.
-    """
-    if vac_pct < 20:
-        return "Stage 1 — isolated point defects (moderate HER enhancement)", "#1D9E75"
-    elif vac_pct < 50:
-        return "Transition — mixed point defects + Mo-rich domains", "#BA7517"
-    else:
-        return "Stage 2 — undercoordinated Mo regions (maximum HER activity)", "#E84040"
-
-
-def get_derived(vals, t, c, s, ln=4, msr=0.55):
-    r = vals['raman']
-    if r < 1.2:   dgh = -0.08 + (r-1.0)*0.15
-    elif r < 1.7: dgh = -0.06 + (r-1.2)*0.28
-    elif r < 2.1: dgh =  0.08 + (r-1.7)*0.60
-    else:          dgh =  0.32 + (r-2.1)*0.90
-    dgh -= 0.10  # MBE Si strain correction (Yang et al.)
-
-    bd = (50-min(c,50))/45*0.5 + max(0,(6-s))/4*0.5
-    if bd > 0.65:   boundary = "Very high — 2H+2H & 2H–1T (ΔGH* ≈ −0.13 eV)"
-    elif bd > 0.40: boundary = "High — 2H–2H dominant (Tafel ~95 mV/dec)"
-    elif bd > 0.20: boundary = "Moderate"
-    else:           boundary = "Low — stoichiometric, few boundaries"
-
-    if s < 2:     vac = "Very high (excess Mo, structural disruption)"
-    elif s < 3:   vac = "High — Mo+MoS₂ coexistence, Vs dominant"
-    elif s <= 6:  vac = "Moderate-optimal — Vs + VMoS3 active"
-    elif s <= 8:  vac = "Low — approaching stoichiometry"
-    else:          vac = "Minimal — stoichiometric MoS₂"
-
-    tf = vals['tafel']
-    if tf < 60:    mech = "Volmer–Heyrovsky (Heyrovsky rate-limiting)"
-    elif tf < 100: mech = "Volmer–Heyrovsky (Volmer moderate)"
-    elif tf < 150: mech = "Volmer rate-limiting (H₂O dissociation in KOH)"
-    elif tf < 300: mech = "Volmer strongly rate-limiting"
-    else:           mech = "Volmer severely limited (quasi-stoichiometric MoS₂)"
-
-    if ln <= 2:      layer_txt = "Ultra-thin (1–2L) — maximum edge/basal ratio, all sites accessible"
-    elif ln <= 4:    layer_txt = "Few-layer (3–4L) — good edge exposure, MBE-optimal range"
-    elif ln <= 7:    layer_txt = "Multi-layer (5–7L) — bulk screening reduces basal activity"
-    else:            layer_txt = "Thick film (≥8L) — edge sites dominate, basal largely inactive"
-
-    if msr < 0.52:   phase_txt = "Near-stoichiometric MoS₂ — 2H dominant, low conductivity"
-    elif msr < 0.58: phase_txt = "Slightly Mo-rich — S-vacancies present, onset of metallic character"
-    elif msr < 0.65: phase_txt = "Mo-rich — Mo⁰/MoS₂ coexistence, high conductivity (Geng 2016)"
-    else:            phase_txt = "Highly Mo-rich — metallic Mo domains dominant, resistivity low but structural integrity at risk"
-
-    return {'dgh': dgh, 'boundary': boundary, 'vacancy': vac, 'mechanism': mech,
-            'layer': layer_txt, 'phase': phase_txt}
-
-# ── Pages ─────────────────────────────────────────────────────
-
-if page == "Predictor":
-    st.markdown("## MoS₂ for HER — Trend Predictor")
-
-    st.markdown(
-        f"<div style='background:{method_color}18; border:2px solid {method_color}; "
-        f"padding:14px 20px; border-radius:10px; margin-bottom:16px;'>"
-        f"<span style='font-size:1.4em; font-weight:800; color:{method_color};'>{method_label}</span>"
-        f"<span style='color:#888; font-size:0.9em; margin-left:16px;'>"
-        f"Layer # {layer_n} · Mo/S {mo_s_ratio:.2f} · ECSA {ecsa_val:.1f} cm²</span>"
+        f"<div class='method-badge' style='background:{m_color}18;"
+        f"border-color:{m_color};color:{m_color};'>{m_label}</div>"
+        f"<div class='score-bar-wrap'>"
+        f"  <div style='font-size:0.72em;color:#666;font-family:IBM Plex Mono,monospace;"
+        f"margin-bottom:3px;'>MBE score: {m_score}/{m_max}</div>"
+        f"  <div class='score-bar-bg'>"
+        f"    <div class='score-bar-fill' style='width:{pct}%;background:{m_color};'></div>"
+        f"  </div>"
         f"</div>",
-        unsafe_allow_html=True
-    )
-    with st.expander("📋 ¿Por qué este método?", expanded=False):
-        for r in method_reasons:
-            st.markdown(f"• {r}")
-        if not method_reasons:
-            st.markdown("• Condiciones near-stoichiometric — CVD es suficiente.")
+        unsafe_allow_html=True)
 
-    st.caption(
-        f"Muestra más cercana en base de datos: **{best_match['sample']}** "
-        f"(T={best_match['temp']:.0f}°C, {best_match['cycles']:.0f} ciclos, "
-        f"S={best_match['s_thick']:.1f}Å)"
-    )
-
-    if dist_val < 0.05:
-        vals = {k: best_match[k] for k in TARGETS}
-        source = f"Datos reales — {best_match['sample']} (Jeon et al. 2026 Tabla 1)"
-        gp_ci = None
-    else:
-        vals = predict_all(layer_n, mo_s_ratio, ecsa_val)
-        source = "Predicción GP (intervalo de credibilidad 95% calibrado)"
-        gp_ci = {}
-        for key in TARGETS:
-            mean, lower, upper, std = gp_predict(key, layer_n, mo_s_ratio, ecsa_val)
-            gp_ci[key] = {'mean': mean, 'lower': lower, 'upper': upper, 'std': std}
-
-    st.caption(f"Fuente: {source}")
-
-    st.markdown("### 🔑 Key descriptors")
-    kd1, kd2, kd3, kd4 = st.columns(4)
-    with kd1:
-        ln_icon = "🟢" if layer_n <= 3 else ("🟡" if layer_n <= 6 else "🔴")
-        st.metric("Layer #", f"{layer_n} capas")
-        st.caption(f"{ln_icon} Óptimo ≤3L · Manyepedza 2022")
-        st.caption("⚠ Estimado · XRD Scherrer")
-    with kd2:
-        msr_icon = "🟢" if 0.55 <= mo_s_ratio <= 0.72 else ("🟡" if mo_s_ratio < 0.82 else "🔴")
-        st.metric("Mo/S ratio", f"{mo_s_ratio:.2f}")
-        st.caption(f"{msr_icon} Óptimo 0.55–0.72 (Mo⁰/MoS₂)")
-        st.caption("⚠ Estimado · Sherwood 2024")
-    with kd3:
-        ecsa_icon = "🟢" if ecsa_val >= 7 else ("🟡" if ecsa_val >= 5 else "🔴")
-        st.metric("ECSA", f"{ecsa_val:.1f} cm²")
-        st.caption(f"{ecsa_icon} Óptimo ≥7 cm² · Jeon 2026")
-        st.caption("✅ Dato real")
-    with kd4:
-        resist_val = vals['resistivity']
-        rct_val    = vals['rct']
-        phys_icon  = "🟢" if resist_val < 12 and rct_val < 70 else ("🟡" if resist_val < 17 else "🔴")
-        st.metric("Physical props", f"ρ={resist_val:.1f} Ω·cm")
-        st.caption(f"{phys_icon} Rct={rct_val:.0f} Ω·cm²")
-        st.caption("✅ Predicho por GP · Jeon 2026")
+    with st.expander("Scoring breakdown", expanded=False):
+        for r in m_reasons:
+            dot_color = m_color if r['points'] > 0 else '#444'
+            st.markdown(
+                f"**{r['criterion']}**: {r['points']}/{r['max']} pts  \n"
+                f"{r['detail']}  \n"
+                + " ".join([f"<span class='ref-chip'>{ref}</span>" for ref in r['refs']]),
+                unsafe_allow_html=True)
 
     st.markdown("---")
+    st.markdown('<div class="section-header">NAVIGATION</div>', unsafe_allow_html=True)
+    page = st.radio("", [
+        "📊 Predictor",
+        "📈 Trend Curves",
+        "🗺 2D Heatmaps",
+        "🌐 3D Explorer",
+        "🔄 Inverse Predictor",
+        "🧮 Feature Importance",
+        "📚 Theoretical Basis",
+        "ℹ️ About",
+    ], label_visibility="collapsed")
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: PREDICTOR
+# ══════════════════════════════════════════════════════════════════════════════
+if page == "📊 Predictor":
+    st.markdown("# MoS₂ HER Predictor")
+    st.markdown(f"<div style='color:#666;font-size:0.9em;margin-bottom:20px;'>"
+                f"Gaussian Process · Jeon et al. ACS Nano 2026 · 14 MBE samples · 1M KOH</div>",
+                unsafe_allow_html=True)
+
+    # Method banner
+    m_color = METHOD_COLORS[m_col_key]
+    st.markdown(
+        f"<div style='background:{m_color}12;border:1.5px solid {m_color}40;"
+        f"border-left:5px solid {m_color};padding:14px 20px;border-radius:6px;"
+        f"margin-bottom:20px;display:flex;align-items:center;gap:20px;'>"
+        f"<div style='font-size:1.3em;font-weight:700;color:{m_color};"
+        f"font-family:IBM Plex Mono,monospace;'>{m_label}</div>"
+        f"<div style='color:#888;font-size:0.85em;'>Score {m_score}/{m_max} · "
+        f"Layer# {layer_n} · Mo/S {mo_s_ratio:.2f} · ECSA {ecsa_val:.1f} cm²</div>"
+        f"</div>",
+        unsafe_allow_html=True)
+
+    # Predict
+    if dist_val < 0.05:
+        vals   = {k: best_match[k] for k in TARGETS}
+        source = f"Experimental data — {best_match['sample']} (Jeon 2026 Table 1)"
+        gp_ci  = None
+    else:
+        vals   = predict_all(layer_n, mo_s_ratio, ecsa_val)
+        source = "GP prediction (calibrated 95% credible interval)"
+        gp_ci  = {k: dict(zip(['mean','lower','upper','std'], gp_predict(k, layer_n, mo_s_ratio, ecsa_val)))
+                  for k in TARGETS}
+
+    st.caption(f"Source: {source}")
+
+    # ── Key descriptor cards ─────────────────────────────────────────────────
+    st.markdown('<div class="section-header">KEY DESCRIPTORS</div>', unsafe_allow_html=True)
+    kc1, kc2, kc3 = st.columns(3)
+    desc_cards = [
+        (kc1, "Layer #", f"{layer_n}", "capas",
+         "🟢 Optimal ≤3L · k⁰×167 (Manyepedza 2022)" if layer_n<=3
+         else ("🟡 Few-layer" if layer_n<=6 else "🔴 Thick film"),
+         "⚠ XRD Scherrer estimate"),
+        (kc2, "Mo/S ratio", f"{mo_s_ratio:.2f}", "",
+         "🟢 Mo⁰/MoS₂ coexistence (optimal)" if 0.55<=mo_s_ratio<=0.72
+         else ("🟡 Near-stoich" if mo_s_ratio<0.55 else "🔴 Highly Mo-rich"),
+         "⚠ XANES/EXAFS estimate"),
+        (kc3, "ECSA", f"{ecsa_val:.1f}", "cm²",
+         "🟢 High — edge sites accessible" if ecsa_val>=7 else "🟡 Moderate",
+         "✅ Measured, Jeon 2026"),
+    ]
+    for col, label, val, unit, status, note in desc_cards:
+        with col:
+            st.markdown(
+                f"<div class='descriptor-card'>"
+                f"<div class='label'>{label}</div>"
+                f"<div class='value'>{val} <span style='font-size:0.6em;color:#888;'>{unit}</span></div>"
+                f"<div class='note'>{status}</div>"
+                f"<div class='note' style='margin-top:4px;color:#555;'>{note}</div>"
+                f"</div>", unsafe_allow_html=True)
+
+    # ── Performance metrics ──────────────────────────────────────────────────
+    st.markdown('<div class="section-header">PREDICTED PERFORMANCE METRICS</div>',
+                unsafe_allow_html=True)
     cols = st.columns(4)
-    metrics_order = ['eta','tafel','rct','raman','resistivity','tof_ecsa','tof_mass']
+    metrics_order = ['eta','tafel','rct','tof_ecsa','tof_mass','raman','resistivity']
+    thresholds = {
+        'eta':(-0.38,-0.50),'tafel':(110,200),'rct':(70,130),
+        'raman':(1.8,2.2),'resistivity':(12,17),'tof_ecsa':(9,6),'tof_mass':(5,2)
+    }
     for i, key in enumerate(metrics_order):
         name, unit, better = TARGETS[key]
         v = vals[key]
         col = cols[i % 4]
-
-        thresholds = {
-            'eta':(-0.38,-0.50), 'tafel':(110,200), 'ecsa':(7,5),
-            'rct':(70,130), 'raman':(1.8,2.2), 'resistivity':(12,17),
-            'tof_ecsa':(9,6), 'tof_mass':(5,2)
-        }
         if key in thresholds:
             g, b = thresholds[key]
-            if better == 'max':
-                color = "normal" if v >= g else ("off" if v <= b else "inverse")
-            else:
-                color = "normal" if v <= g else ("off" if v >= b else "inverse")
+            color = "normal" if (v>=g if better=='max' else v<=g) \
+                    else ("off" if (v<=b if better=='max' else v>=b) else "inverse")
         else:
             color = "normal"
-
-        fmt = f"{v:.2f}" if abs(v) < 100 else f"{v:.0f}"
-
-        if gp_ci is not None:
+        fmt = f"{v:.2f}" if abs(v)<100 else f"{v:.0f}"
+        if gp_ci:
             std = gp_ci[key]['std']
-            fmt_std = f"±{std:.2f}" if abs(std) < 100 else f"±{std:.0f}"
-            col.metric(f"{name}", f"{fmt} {unit}",
-                       delta=f"{fmt_std} {unit} (1σ)", delta_color="off")
+            col.metric(name, f"{fmt} {unit}",
+                       delta=f"±{std:.2f}" if abs(std)<100 else f"±{std:.0f}",
+                       delta_color="off")
         else:
-            col.metric(f"{name}", f"{fmt} {unit}")
+            col.metric(name, f"{fmt} {unit}")
 
-    st.markdown("---")
+    # ── Radar chart ──────────────────────────────────────────────────────────
+    st.markdown('<div class="section-header">PERFORMANCE PROFILE</div>', unsafe_allow_html=True)
+    # Normalise each metric 0→1 (best=1, worst=0) using dataset min/max
+    radar_keys  = ['eta','tafel','rct','tof_ecsa','tof_mass','raman','resistivity']
+    radar_names = ['η (overpot.)','Tafel','Rct','TOF(ECSA)','TOF(mass)','Raman','Resistivity']
+    normed = []
+    for key in radar_keys:
+        _, _, better = TARGETS[key]
+        col_vals = df[key].values
+        vmin, vmax = col_vals.min(), col_vals.max()
+        v = vals[key]
+        n = (v - vmin) / (vmax - vmin + 1e-9)
+        normed.append(n if better=='max' else 1-n)
 
-    bm_temp   = best_match['temp']
-    bm_cycles = best_match['cycles']
-    bm_sthick = best_match['s_thick']
-    der = get_derived(vals, bm_temp, bm_cycles, bm_sthick, layer_n, mo_s_ratio)
-    st.markdown("### Descriptores estructurales derivados (base teórica)")
-    c1, c2, c3, c4 = st.columns(4)
+    # Also add best sample and closest experimental for comparison
+    normed_best, normed_closest = [], []
+    best_exp = df.loc[df['eta'].idxmax()]         # best η overall (least negative)
+    # actually best = least negative η
+    best_exp = df.loc[df['eta'].idxmax()]
+    closest_row = best_match
+    for key in radar_keys:
+        _, _, better = TARGETS[key]
+        vmin = df[key].min(); vmax = df[key].max()
+        bv = (best_exp[key]-vmin)/(vmax-vmin+1e-9)
+        normed_best.append(bv if better=='max' else 1-bv)
+        cv = (closest_row[key]-vmin)/(vmax-vmin+1e-9)
+        normed_closest.append(cv if better=='max' else 1-cv)
 
-    with c1:
-        dgh_color = "🟢" if abs(der['dgh']) < 0.15 else ("🟡" if abs(der['dgh']) < 0.35 else "🔴")
-        st.markdown(f"**Estimated ΔGH*** {dgh_color}")
-        st.markdown(f"**{der['dgh']:.2f} eV**  \nIdeal = 0 eV · Pt = −0.18 eV · 2H–1T = −0.13 eV  \n*Hanslin + Yang, ~1.5% MBE strain correction*")
+    fig_radar = go.Figure()
+    cats = radar_names + [radar_names[0]]
+    fig_radar.add_trace(go.Scatterpolar(
+        r=normed+[normed[0]], theta=cats,
+        fill='toself', name='Your prediction',
+        fillcolor=f"{m_color}30", line=dict(color=m_color, width=2)))
+    fig_radar.add_trace(go.Scatterpolar(
+        r=normed_closest+[normed_closest[0]], theta=cats,
+        fill='toself', name=f'Closest: {best_match["sample"]}',
+        fillcolor='rgba(255,255,255,0.04)', line=dict(color='#aaa', width=1.5, dash='dot')))
+    fig_radar.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0,1], tickfont=dict(size=9)),
+                   angularaxis=dict(tickfont=dict(size=10))),
+        showlegend=True, height=380,
+        legend=dict(orientation='h', yanchor='bottom', y=-0.25),
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        margin=dict(t=20, b=60, l=40, r=40))
+    st.plotly_chart(fig_radar, use_container_width=True)
 
-    with c2:
-        st.markdown("**S-vacancy density**")
-        st.markdown(f"{der['vacancy']}  \n*Li/Voiry + Yang et al.*")
-        st.markdown("**Domain boundary density**")
-        st.markdown(f"{der['boundary']}  \n*Zhu et al. Nat. Commun. 2019*")
-
-    with c3:
-        st.markdown("**Layer # effect**")
-        st.markdown(f"{der['layer']}  \n*Hanslin et al. PCCP 2023 + Manyepedza et al. 2022*")
-        st.markdown("**Phase composition**")
-        st.markdown(f"{der['phase']}  \n*Geng et al. Nat. Commun. 2016*")
-
-    with c4:
-        st.markdown("**Dominant HER mechanism**")
-        st.markdown(f"{der['mechanism']}  \n*Muhyuddin review + Manyepedza 2022 (45 mV dec⁻¹, Heyrovsky RDS)*")
-        st.markdown("**MBE strain activation**")
-        strain_active = bm_sthick <= 6 and bm_cycles <= 20
-        strain_txt = "Active — tensile strain activates Vs/VMoS3 sites" if strain_active else "Limited — stoichiometric regime reduces strain benefit"
-        st.markdown(f"{strain_txt}  \n*Yang et al. RSC Adv. 2023*")
-
-    st.markdown("---")
-    st.markdown("### 3 muestras más cercanas en la base de datos")
+    # ── Closest samples table ────────────────────────────────────────────────
+    st.markdown('<div class="section-header">3 CLOSEST EXPERIMENTAL SAMPLES</div>',
+                unsafe_allow_html=True)
     df_dist2 = df.copy()
     df_dist2['dist'] = df.apply(lambda r: np.sqrt(
-        ((r.layer_n    - layer_n)    / 18)   ** 2 +
-        ((r.mo_s_ratio - mo_s_ratio) / 0.36) ** 2 +
-        ((r.ecsa       - ecsa_val)   / 6.0)  ** 2
-    ), axis=1)
-    closest = df_dist2.nsmallest(3, 'dist')
-    show_cols = ['sample','series','temp','cycles','s_thick','layer_n','mo_s_ratio',
-                 'ecsa','eta','tafel','rct','raman','resistivity']
+        ((r.layer_n    - layer_n)    / 18)   **2 +
+        ((r.mo_s_ratio - mo_s_ratio) / 0.36) **2 +
+        ((r.ecsa       - ecsa_val)   / 6.0)  **2), axis=1)
+    closest = df_dist2.nsmallest(3,'dist')
+    show_cols = ['sample','series','layer_n','mo_s_ratio','ecsa',
+                 'eta','tafel','rct','tof_ecsa','tof_mass']
     st.dataframe(closest[show_cols].reset_index(drop=True), use_container_width=True)
 
 
-# ── Inverse Predictor page ────────────────────────────────────
-elif page == "Inverse Predictor":
-    st.markdown("## 🔄 Inverse Predictor — Properties → Synthesis Method")
-    st.markdown(
-        "Set your **target HER properties** below. The app finds the closest experimental "
-        "match and tells you whether **Chemical (CVD)** or **Physical (MBE)** method is needed."
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: TREND CURVES
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "📈 Trend Curves":
+    st.markdown("# Trend Curves")
+    st.markdown("<div style='color:#666;font-size:0.9em;margin-bottom:20px;'>"
+                "How each descriptor drives performance — GP mean + 95% CI vs experimental data</div>",
+                unsafe_allow_html=True)
+
+    tc1, tc2 = st.columns([1,2])
+    with tc1:
+        target_tc = st.selectbox("Performance metric",
+            options=list(TARGETS.keys()),
+            format_func=lambda k: f"{TARGETS[k][0]} ({TARGETS[k][1]})")
+    with tc2:
+        feat_tc = st.selectbox("Descriptor to vary",
+            options=FEATURES,
+            format_func=lambda k: FEATURE_LABELS[k])
+
+    name_tc, unit_tc, better_tc = TARGETS[target_tc]
+
+    defaults = {'layer_n': layer_n, 'mo_s_ratio': mo_s_ratio, 'ecsa': ecsa_val}
+
+    lo, hi = FEATURE_RANGES[feat_tc]
+    x_range = np.linspace(lo, hi, 80)
+    y_means, y_lows, y_highs = [], [], []
+    for xv in x_range:
+        row = {f: (xv if f == feat_tc else defaults[f]) for f in FEATURES}
+        m, lo_, hi_, _ = gp_predict(target_tc, row['layer_n'], row['mo_s_ratio'], row['ecsa'])
+        y_means.append(m); y_lows.append(lo_); y_highs.append(hi_)
+    y_means = np.array(y_means)
+    y_lows  = np.array(y_lows)
+    y_highs = np.array(y_highs)
+
+    # Experimental range mask
+    exp_lo, exp_hi = df[feat_tc].min(), df[feat_tc].max()
+    in_range = (x_range >= exp_lo) & (x_range <= exp_hi)
+
+    fig_tc = go.Figure()
+
+    # CI band
+    fig_tc.add_trace(go.Scatter(
+        x=np.concatenate([x_range, x_range[::-1]]),
+        y=np.concatenate([y_highs, y_lows[::-1]]),
+        fill='toself', fillcolor='rgba(78,154,241,0.12)',
+        line=dict(color='rgba(0,0,0,0)'), name='95% CI', showlegend=True))
+
+    # GP mean — full range (dashed, extrapolation)
+    fig_tc.add_trace(go.Scatter(x=x_range, y=y_means, mode='lines',
+        line=dict(color='rgba(78,154,241,0.35)', width=1.5, dash='dot'),
+        name='GP mean (extrapolation)', showlegend=True))
+
+    # GP mean — interpolation range (solid)
+    x_in = x_range[in_range]; y_in = y_means[in_range]
+    fig_tc.add_trace(go.Scatter(x=x_in, y=y_in, mode='lines',
+        line=dict(color='#4E9AF1', width=3),
+        name='GP mean (interpolation)', showlegend=True))
+
+    # Experimental data points, coloured by series
+    exp_x = df[feat_tc].values; exp_y = df[target_tc].values
+    for ser, scolor in SERIES_COLORS.items():
+        mask = df['series'] == ser
+        fig_tc.add_trace(go.Scatter(
+            x=exp_x[mask], y=exp_y[mask], mode='markers',
+            name=SERIES_LABELS[ser],
+            marker=dict(size=11, color=scolor, line=dict(width=1.5, color='white')),
+            text=df['sample'][mask],
+            hovertemplate='<b>%{text}</b><br>'+FEATURE_LABELS[feat_tc]+'=%{x:.2f}'
+                          '<br>'+name_tc+'=%{y:.3f} '+unit_tc+'<extra></extra>'))
+
+    # Vertical line at current slider value
+    cur_val = defaults[feat_tc]
+    fig_tc.add_vline(x=cur_val, line_width=1.5, line_dash="dash",
+                     line_color=METHOD_COLORS[m_col_key],
+                     annotation_text=f"Current: {cur_val:.2f}",
+                     annotation_font_color=METHOD_COLORS[m_col_key])
+
+    # Shaded experimental range
+    fig_tc.add_vrect(x0=exp_lo, x1=exp_hi,
+                     fillcolor="rgba(255,255,255,0.03)", line_width=0,
+                     annotation_text="Experimental range",
+                     annotation_position="top left",
+                     annotation_font_size=10, annotation_font_color="#555")
+
+    fig_tc.update_layout(
+        title=f"{name_tc} vs {FEATURE_LABELS[feat_tc]}"
+              f"  |  other descriptors fixed at slider values",
+        xaxis_title=FEATURE_LABELS[feat_tc],
+        yaxis_title=f"{name_tc} ({unit_tc})",
+        height=480,
+        legend=dict(orientation='h', yanchor='bottom', y=-0.35),
+        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
     )
+    fig_tc.update_xaxes(showgrid=True, gridcolor='rgba(128,128,128,0.12)')
+    fig_tc.update_yaxes(showgrid=True, gridcolor='rgba(128,128,128,0.12)')
+    st.plotly_chart(fig_tc, use_container_width=True)
+
+    # ── All 3 descriptors in a row ────────────────────────────────────────────
+    st.markdown('<div class="section-header">ALL 3 DESCRIPTORS — OVERVIEW</div>',
+                unsafe_allow_html=True)
+    cols3 = st.columns(3)
+    for fi, feat in enumerate(FEATURES):
+        lo_f, hi_f = FEATURE_RANGES[feat]
+        xr = np.linspace(lo_f, hi_f, 60)
+        ym = []
+        for xv in xr:
+            row = {f: (xv if f == feat else defaults[f]) for f in FEATURES}
+            m,_,_,_ = gp_predict(target_tc, row['layer_n'], row['mo_s_ratio'], row['ecsa'])
+            ym.append(m)
+        ym = np.array(ym)
+        exp_xf = df[feat].values; exp_yf = df[target_tc].values
+        fig_s = go.Figure()
+        fig_s.add_trace(go.Scatter(x=xr, y=ym, mode='lines',
+            line=dict(color='#4E9AF1', width=2), showlegend=False))
+        for ser, scolor in SERIES_COLORS.items():
+            mask = df['series'] == ser
+            fig_s.add_trace(go.Scatter(
+                x=exp_xf[mask], y=exp_yf[mask], mode='markers',
+                marker=dict(size=8, color=scolor, line=dict(width=1, color='white')),
+                name=ser, showlegend=(fi==0), text=df['sample'][mask],
+                hovertemplate='<b>%{text}</b><br>%{x:.2f} → %{y:.3f}<extra></extra>'))
+        cur = defaults[feat]
+        fig_s.add_vline(x=cur, line_dash='dash', line_color=METHOD_COLORS[m_col_key],
+                        line_width=1.2)
+        fig_s.update_layout(
+            title=dict(text=FEATURE_LABELS[feat], font=dict(size=12)),
+            xaxis_title=FEATURE_LABELS[feat], yaxis_title=f"{name_tc} ({unit_tc})",
+            height=260, margin=dict(t=40,b=40,l=40,r=10),
+            showlegend=False,
+            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+        fig_s.update_xaxes(showgrid=True, gridcolor='rgba(128,128,128,0.10)')
+        fig_s.update_yaxes(showgrid=True, gridcolor='rgba(128,128,128,0.10)')
+        cols3[fi].plotly_chart(fig_s, use_container_width=True)
+
+    st.caption(
+        "Solid blue line = GP mean within experimental range. "
+        "Dashed = extrapolation. Colored dots = experimental data (T/N/M series). "
+        "Vertical dashed line = current slider value.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: 2D HEATMAPS
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "🗺 2D Heatmaps":
+    st.markdown("# 2D Heatmaps")
+    st.markdown("<div style='color:#666;font-size:0.9em;margin-bottom:20px;'>"
+                "GP-predicted performance over pairs of descriptors. "
+                "Third descriptor fixed at sidebar slider value.</div>",
+                unsafe_allow_html=True)
+
+    hc1, hc2 = st.columns(2)
+    with hc1:
+        target_hm = st.selectbox("Performance metric",
+            options=list(TARGETS.keys()),
+            format_func=lambda k: f"{TARGETS[k][0]} ({TARGETS[k][1]})")
+    with hc2:
+        axis_pair = st.selectbox("Axes (X × Y)", [
+            "Layer# × Mo/S  (ECSA fixed)",
+            "Layer# × ECSA  (Mo/S fixed)",
+            "Mo/S × ECSA   (Layer# fixed)",
+        ])
+
+    name_hm, unit_hm, better_hm = TARGETS[target_hm]
+    N = 40  # grid resolution
+
+    defaults_hm = {'layer_n': layer_n, 'mo_s_ratio': mo_s_ratio, 'ecsa': ecsa_val}
+
+    if axis_pair.startswith("Layer# × Mo/S"):
+        xf, yf, fixed_f = 'layer_n', 'mo_s_ratio', 'ecsa'
+        xlabel, ylabel   = 'Layer #', 'Mo/S ratio'
+    elif axis_pair.startswith("Layer# × ECSA"):
+        xf, yf, fixed_f = 'layer_n', 'ecsa', 'mo_s_ratio'
+        xlabel, ylabel   = 'Layer #', 'ECSA (cm²)'
+    else:
+        xf, yf, fixed_f = 'mo_s_ratio', 'ecsa', 'layer_n'
+        xlabel, ylabel   = 'Mo/S ratio', 'ECSA (cm²)'
+
+    xlo, xhi = FEATURE_RANGES[xf]
+    ylo, yhi = FEATURE_RANGES[yf]
+    xgrid = np.linspace(xlo, xhi, N)
+    ygrid = np.linspace(ylo, yhi, N)
+
+    Z = np.zeros((N, N))
+    for i, yv in enumerate(ygrid):
+        for j, xv in enumerate(xgrid):
+            row = {xf: xv, yf: yv, fixed_f: defaults_hm[fixed_f]}
+            m,_,_,_ = gp_predict(target_hm,
+                                  row['layer_n'], row['mo_s_ratio'], row['ecsa'])
+            Z[i, j] = m
+
+    # Color scale: green=better, red=worse
+    cs = 'RdYlGn' if better_hm == 'max' else 'RdYlGn_r'
+
+    fig_hm = go.Figure(data=go.Heatmap(
+        z=Z, x=xgrid, y=ygrid,
+        colorscale=cs,
+        colorbar=dict(title=f"{name_hm}<br>({unit_hm})", titleside='right'),
+        hoverongaps=False,
+        hovertemplate=f'{xlabel}=%{{x:.2f}}<br>{ylabel}=%{{y:.2f}}'
+                      f'<br>{name_hm}=%{{z:.3f}} {unit_hm}<extra></extra>'))
+
+    # Overlay experimental data
+    exp_x_hm = df[xf].values; exp_y_hm = df[yf].values; exp_z_hm = df[target_hm].values
+    for ser, scolor in SERIES_COLORS.items():
+        mask = df['series'] == ser
+        fig_hm.add_trace(go.Scatter(
+            x=exp_x_hm[mask], y=exp_y_hm[mask], mode='markers+text',
+            marker=dict(size=12, color=scolor, symbol='circle',
+                        line=dict(width=2, color='white')),
+            text=df['sample'][mask],
+            textposition='top center',
+            textfont=dict(size=9, color='white'),
+            name=SERIES_LABELS[ser],
+            hovertemplate='<b>%{text}</b><br>'+xlabel+'=%{x:.2f}'
+                          '<br>'+ylabel+'=%{y:.2f}'
+                          '<br>'+name_hm+f'=%{{customdata:.3f}} {unit_hm}<extra></extra>',
+            customdata=exp_z_hm[mask]))
+
+    # Current slider position
+    fig_hm.add_trace(go.Scatter(
+        x=[defaults_hm[xf]], y=[defaults_hm[yf]], mode='markers',
+        marker=dict(size=16, color=METHOD_COLORS[m_col_key], symbol='star',
+                    line=dict(width=2, color='white')),
+        name='Your position', showlegend=True))
+
+    fig_hm.update_layout(
+        title=f"{name_hm} — {xlabel} × {ylabel}  |  {FEATURE_LABELS[fixed_f]} fixed at {defaults_hm[fixed_f]:.2f}",
+        xaxis_title=xlabel, yaxis_title=ylabel,
+        height=540,
+        legend=dict(orientation='h', yanchor='bottom', y=-0.22),
+        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+    st.plotly_chart(fig_hm, use_container_width=True)
+
+    # ── CVD/MBE method map ────────────────────────────────────────────────────
+    st.markdown('<div class="section-header">CVD vs MBE METHOD MAP</div>',
+                unsafe_allow_html=True)
+    st.caption("Score ≥3 = MBE · Score 1–2 = Both (MBE preferred) · Score 0 = CVD. "
+               "Only Layer# × Mo/S pair shown (strongest drivers of method choice).")
+
+    NM = 50
+    ln_grid  = np.linspace(1, 20, NM)
+    msr_grid = np.linspace(0.45, 0.90, NM)
+    Zm = np.zeros((NM, NM))
+    for i, msr_v in enumerate(msr_grid):
+        for j, ln_v in enumerate(ln_grid):
+            _, _, sc, _, _ = score_method(ln_v, msr_v, ecsa_val)
+            Zm[i, j] = sc
+
+    fig_map = go.Figure(data=go.Heatmap(
+        z=Zm, x=ln_grid, y=msr_grid,
+        colorscale=[
+            [0.0,  '#4E9AF155'],   # 0 = CVD
+            [0.375,'#4E9AF1'],
+            [0.375,'#F5A623'],     # 1-2 = Both
+            [0.75, '#F5A623'],
+            [0.75, '#2DCE89'],     # 3+ = MBE
+            [1.0,  '#2DCE89'],
+        ],
+        zmin=0, zmax=4,
+        colorbar=dict(title='MBE score', tickvals=[0,1,2,3,4]),
+        hovertemplate='Layer#=%{x:.0f}<br>Mo/S=%{y:.2f}<br>Score=%{z:.0f}<extra></extra>'))
+
+    # Overlay real samples
+    for ser, scolor in SERIES_COLORS.items():
+        mask = df['series'] == ser
+        _, _, sc_ser, _, _ = score_method(0,0,0)  # placeholder
+        fig_map.add_trace(go.Scatter(
+            x=df['layer_n'][mask], y=df['mo_s_ratio'][mask], mode='markers+text',
+            marker=dict(size=11, color='white', line=dict(width=2, color=scolor)),
+            text=df['sample'][mask], textposition='top center',
+            textfont=dict(size=8, color='white'),
+            name=SERIES_LABELS[ser]))
+
+    # Current position
+    fig_map.add_trace(go.Scatter(
+        x=[layer_n], y=[mo_s_ratio], mode='markers',
+        marker=dict(size=16, color=METHOD_COLORS[m_col_key], symbol='star',
+                    line=dict(width=2, color='white')),
+        name='Your position'))
+
+    # Decision boundary lines
+    fig_map.add_hline(y=0.58, line_dash='dot', line_color='white', line_width=1,
+                      annotation_text="Mo/S=0.58 (MBE preferred)", annotation_font_color='white')
+    fig_map.add_hline(y=0.72, line_dash='dot', line_color='#2DCE89', line_width=1,
+                      annotation_text="Mo/S=0.72 (MBE required)", annotation_font_color='#2DCE89')
+    fig_map.add_vline(x=3, line_dash='dot', line_color='#2DCE89', line_width=1,
+                      annotation_text="Layer#=3", annotation_font_color='#2DCE89')
+    fig_map.add_vline(x=12, line_dash='dot', line_color='white', line_width=1,
+                      annotation_text="Layer#=12", annotation_font_color='white')
+
+    fig_map.update_layout(
+        title=f"CVD vs MBE decision map — Layer# × Mo/S  |  ECSA fixed at {ecsa_val:.1f} cm²",
+        xaxis_title='Layer #', yaxis_title='Mo/S ratio',
+        height=480,
+        legend=dict(orientation='h', yanchor='bottom', y=-0.25),
+        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+    st.plotly_chart(fig_map, use_container_width=True)
+
+    st.caption(
+        "🟢 Green = MBE required (score ≥3) · 🟡 Amber = Both viable (score 1–2) · "
+        "🔵 Blue = CVD sufficient (score 0). "
+        "White dots = experimental Jeon samples. ★ = your current slider position.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: 3D EXPLORER
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "🌐 3D Explorer":
+    st.markdown("# 3D Descriptor Space Explorer")
+    st.markdown("<div style='color:#666;font-size:0.9em;margin-bottom:20px;'>"
+                "Layer# × Mo/S × ECSA — colour = selected performance metric. "
+                "Rotate, zoom, hover for details.</div>",
+                unsafe_allow_html=True)
+
+    t3c1, t3c2 = st.columns(2)
+    with t3c1:
+        target_3d = st.selectbox("Color metric",
+            options=list(TARGETS.keys()),
+            format_func=lambda k: f"{TARGETS[k][0]} ({TARGETS[k][1]})")
+    with t3c2:
+        show_surf = st.checkbox("Show GP surface slice (Mo/S fixed at slider)", value=True)
+
+    name_3d, unit_3d, better_3d = TARGETS[target_3d]
+
+    fig_3d = go.Figure()
+
+    # ── GP surface slice (Layer# × ECSA at fixed Mo/S) ───────────────────────
+    if show_surf:
+        N3 = 25
+        ln3  = np.linspace(1, 20, N3)
+        ec3  = np.linspace(2, 12, N3)
+        Zs   = np.zeros((N3, N3))
+        for i, ev in enumerate(ec3):
+            for j, lv in enumerate(ln3):
+                Zs[i,j] = gp_predict(target_3d, lv, mo_s_ratio, ev)[0]
+        fig_3d.add_trace(go.Surface(
+            x=ln3, y=ec3, z=Zs,
+            colorscale='RdYlGn' if better_3d=='max' else 'RdYlGn_r',
+            opacity=0.55, showscale=False,
+            name=f'GP surface (Mo/S={mo_s_ratio:.2f})',
+            hovertemplate='Layer#=%{x:.1f}<br>ECSA=%{y:.1f}<br>'+name_3d+'=%{z:.3f}<extra></extra>'))
+
+    # ── Experimental data points ──────────────────────────────────────────────
+    for ser, scolor in SERIES_COLORS.items():
+        mask  = df['series'] == ser
+        sub   = df[mask]
+        zvals = sub[target_3d].values
+        fig_3d.add_trace(go.Scatter3d(
+            x=sub['layer_n'], y=sub['ecsa'], z=sub['mo_s_ratio'],
+            mode='markers+text',
+            marker=dict(size=8, color=zvals,
+                        colorscale='RdYlGn' if better_3d=='max' else 'RdYlGn_r',
+                        cmin=df[target_3d].min(), cmax=df[target_3d].max(),
+                        line=dict(width=2, color='white')),
+            text=sub['sample'],
+            name=SERIES_LABELS[ser],
+            hovertemplate='<b>%{text}</b><br>Layer#=%{x}<br>ECSA=%{y:.1f}'
+                          '<br>Mo/S=%{z:.2f}<br>'+name_3d+f'=%{{marker.color:.3f}} {unit_3d}'
+                          '<extra></extra>'))
+
+    # ── Current position ──────────────────────────────────────────────────────
+    cur_pred = gp_predict(target_3d, layer_n, mo_s_ratio, ecsa_val)[0]
+    fig_3d.add_trace(go.Scatter3d(
+        x=[layer_n], y=[ecsa_val], z=[mo_s_ratio],
+        mode='markers',
+        marker=dict(size=14, color=METHOD_COLORS[m_col_key], symbol='diamond',
+                    line=dict(width=3, color='white')),
+        name=f'Your position ({cur_pred:.3f} {unit_3d})'))
+
+    fig_3d.update_layout(
+        scene=dict(
+            xaxis_title='Layer #',
+            yaxis_title='ECSA (cm²)',
+            zaxis_title='Mo/S ratio',
+            xaxis=dict(backgroundcolor='rgba(0,0,0,0)', gridcolor='rgba(128,128,128,0.2)'),
+            yaxis=dict(backgroundcolor='rgba(0,0,0,0)', gridcolor='rgba(128,128,128,0.2)'),
+            zaxis=dict(backgroundcolor='rgba(0,0,0,0)', gridcolor='rgba(128,128,128,0.2)'),
+        ),
+        title=f"{name_3d} ({unit_3d}) in Layer# × ECSA × Mo/S space",
+        height=620,
+        legend=dict(orientation='h', yanchor='bottom', y=-0.12),
+        paper_bgcolor='rgba(0,0,0,0)')
+    st.plotly_chart(fig_3d, use_container_width=True)
+
     st.info(
-        "💡 Idea del maestro: una vez identificados los key descriptors que determinan la "
-        "actividad catalítica, podemos trabajar al revés — definir las propiedades deseadas "
-        "y recomendar el método de síntesis para alcanzarlas."
-    )
+        f"**Your position:** Layer# {layer_n} · Mo/S {mo_s_ratio:.2f} · ECSA {ecsa_val:.1f} cm²  "
+        f"→ GP predicts **{name_3d} = {cur_pred:.3f} {unit_3d}**  |  Method: **{m_label}**")
 
-    st.markdown("### Step 1 — Set target performance")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: INVERSE PREDICTOR
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "🔄 Inverse Predictor":
+    st.markdown("# Inverse Predictor")
+    st.markdown("<div style='color:#666;font-size:0.9em;margin-bottom:20px;'>"
+                "Set target HER properties → find closest experimental match → get synthesis method.</div>",
+                unsafe_allow_html=True)
+
+    st.markdown('<div class="section-header">TARGET PERFORMANCE</div>', unsafe_allow_html=True)
     ic1, ic2, ic3, ic4 = st.columns(4)
-    with ic1:
-        t_eta   = st.slider("Target η (V)", -0.60, -0.25, -0.35, 0.01,
-                             help="More negative = harder. MoS-N10 achieved −0.33 V.")
-    with ic2:
-        t_tafel = st.slider("Target Tafel slope (mV/dec)", 60, 300, 100, 5,
-                             help="Lower = better kinetics. MoS-N10: 80 mV/dec.")
-    with ic3:
-        t_ecsa  = st.slider("Target ECSA (cm²)", 2.0, 12.0, 7.0, 0.5,
-                             help="Higher = more active surface. MoS-M6.0: 9.2 cm².")
-    with ic4:
-        t_rct   = st.slider("Target Rct (Ω·cm²)", 20.0, 200.0, 60.0, 5.0,
-                             help="Lower = faster charge transfer. MoS-N10: 52.8.")
-
-    st.markdown("---")
-    st.markdown("### Step 2 — Closest experimental match")
+    with ic1: t_eta   = st.slider("Target η (V)", -0.60, -0.25, -0.35, 0.01)
+    with ic2: t_tafel = st.slider("Target Tafel (mV/dec)", 60, 300, 100, 5)
+    with ic3: t_ecsa  = st.slider("Target ECSA (cm²)", 2.0, 12.0, 7.0, 0.5)
+    with ic4: t_rct   = st.slider("Target Rct (Ω·cm²)", 20.0, 200.0, 60.0, 5.0)
 
     df_inv = df.copy()
     df_inv['perf_score'] = df_inv.apply(lambda r: np.sqrt(
-        ((r.eta    - t_eta)   / 0.30) ** 2 +
-        ((r.tafel  - t_tafel) / 250)  ** 2 +
-        ((r.ecsa   - t_ecsa)  / 8)    ** 2 +
-        ((r.rct    - t_rct)   / 180)  ** 2
-    ), axis=1)
+        ((r.eta    - t_eta)   / 0.30) **2 +
+        ((r.tafel  - t_tafel) / 250)  **2 +
+        ((r.ecsa   - t_ecsa)  / 8)    **2 +
+        ((r.rct    - t_rct)   / 180)  **2), axis=1)
     candidates = df_inv.nsmallest(3, 'perf_score')
-    best = candidates.iloc[0]
+    best_inv   = candidates.iloc[0]
 
-    cand_show = candidates[['sample','series','temp','cycles','s_thick','layer_n','mo_s_ratio',
-                             'eta','tafel','ecsa','rct']].copy()
-    cand_show.columns = ['Sample','Series','Temp (°C)','Cycles','S-thick (Å)',
-                         'Layers','Mo/S','η (V)','Tafel','ECSA (cm²)','Rct (Ω·cm²)']
-    st.dataframe(cand_show.reset_index(drop=True), use_container_width=True)
+    st.markdown('<div class="section-header">CLOSEST EXPERIMENTAL MATCHES</div>',
+                unsafe_allow_html=True)
+    show_inv = candidates[['sample','series','layer_n','mo_s_ratio','ecsa',
+                            'eta','tafel','rct','tof_ecsa']].reset_index(drop=True)
+    st.dataframe(show_inv, use_container_width=True)
 
-    st.markdown("---")
-    st.markdown("### Step 3 — Synthesis method recommendation")
-
-    b_layer = best['layer_n']
-    b_msr   = best['mo_s_ratio']
-    b_ecsa  = best['ecsa']
-    b_rct   = best['rct']
-
-    inv_method_label, inv_method_color, inv_method_reasons = recommend_method(
-        b_layer, b_msr, b_ecsa, b_rct
-    )
+    st.markdown('<div class="section-header">SYNTHESIS RECOMMENDATION</div>',
+                unsafe_allow_html=True)
+    inv_label, inv_col, inv_score, inv_max, inv_reasons = score_method(
+        best_inv['layer_n'], best_inv['mo_s_ratio'],
+        best_inv['ecsa'],    best_inv['rct'])
+    inv_color = METHOD_COLORS[inv_col]
 
     st.markdown(
-        f"<div style='background:{inv_method_color}18; border:3px solid {inv_method_color}; "
-        f"padding:18px 24px; border-radius:12px; margin:8px 0 16px 0;'>"
-        f"<div style='font-size:1.6em; font-weight:800; color:{inv_method_color};'>{inv_method_label}</div>"
-        f"<div style='color:#666; margin-top:6px;'>Best match: <b>{best['sample']}</b> — "
-        f"η={best.eta:.2f} V · Tafel={best.tafel:.0f} mV/dec · "
-        f"ECSA={best.ecsa:.1f} cm² · Rct={best.rct:.1f} Ω·cm²</div>"
-        f"</div>",
-        unsafe_allow_html=True
-    )
+        f"<div style='background:{inv_color}12;border:2px solid {inv_color}40;"
+        f"border-left:5px solid {inv_color};padding:16px 20px;border-radius:6px;'>"
+        f"<div style='font-size:1.4em;font-weight:700;color:{inv_color};"
+        f"font-family:IBM Plex Mono,monospace;'>{inv_label}</div>"
+        f"<div style='color:#888;margin-top:6px;'>Best match: <b>{best_inv['sample']}</b> · "
+        f"η={best_inv.eta:.2f} V · Tafel={best_inv.tafel:.0f} mV/dec · "
+        f"ECSA={best_inv.ecsa:.1f} cm² · Rct={best_inv.rct:.1f} Ω·cm²</div>"
+        f"<div style='margin-top:10px;'><b>Score: {inv_score}/{inv_max}</b></div>"
+        f"</div>", unsafe_allow_html=True)
 
-    col_method, col_params = st.columns([1, 2])
-    with col_method:
-        st.markdown("**Why this method?**")
-        for r in inv_method_reasons:
-            st.markdown(f"• {r}")
-        if not inv_method_reasons:
-            st.markdown("• Near-stoichiometric, thick-film — CVD is sufficient.")
+    st.markdown("**Scoring breakdown:**")
+    for r in inv_reasons:
+        st.markdown(f"• **{r['criterion']}** ({r['points']}/{r['max']} pts): {r['detail']}")
 
-    with col_params:
-        st.markdown("**Target synthesis parameters**")
-        param_table = {
-            'Parameter': ['Annealing temp', 'Deposition cycles', 'S-layer thickness',
-                          'Layer #', 'Mo/S ratio'],
-            'Value': [f"{best['temp']:.0f} °C", f"{best['cycles']:.0f}",
-                      f"{best['s_thick']:.1f} Å", f"{b_layer:.0f}", f"{b_msr:.2f}"],
-            'Note': [
-                'Higher T → crystalline but fewer edge sites',
-                'Controls thickness & layer count (~1 layer per 5 cycles)',
-                'Key lever for Mo/S ratio and S-vacancy density',
-                '≤3 layers: MBE required (k⁰ × 167, onset −0.10 V, Manyepedza 2022)',
-                '>0.58: Mo+MoS₂ coexistence — MBE Mo-flux control',
-            ]
-        }
-        st.dataframe(pd.DataFrame(param_table), use_container_width=True, hide_index=True)
-
-    st.markdown("---")
-    st.markdown("### Step 4 — Key descriptor summary for this condition")
-    pp1, pp2, pp3, pp4 = st.columns(4)
-    with pp1:
-        ln_icon = "🟢" if b_layer <= 4 else "🟡"
-        st.metric("Layer #", f"{b_layer:.0f}")
-        st.caption(f"{ln_icon} Edge site exposure")
-    with pp2:
-        msr_icon = "🟢" if 0.55 <= b_msr <= 0.65 else "🟡"
-        st.metric("Mo/S ratio", f"{b_msr:.2f}")
-        st.caption(f"{msr_icon} Phase composition (Mo⁰ + MoS₂)")
-    with pp3:
-        ecsa_icon = "🟢" if b_ecsa >= 7 else "🟡"
-        st.metric("ECSA", f"{b_ecsa:.1f} cm²")
-        st.caption(f"{ecsa_icon} Active surface area")
-    with pp4:
-        rct_icon = "🟢" if b_rct < 70 else "🟡"
-        st.metric("Rct", f"{b_rct:.1f} Ω·cm²")
-        st.caption(f"{rct_icon} Charge transfer resistance")
-
-    with pp4:
-        rct_icon = "🟢" if best['rct'] < 70 else "🟡"
-        st.metric("Rct", f"{best['rct']:.1f} Ω·cm²")
-        st.caption(f"{rct_icon} Charge transfer resistance")
-
-    resist_best = best['resistivity']
-    raman_best  = best['raman']
-    st.caption(
-        f"Additional: Resistivity = {resist_best:.2f} Ω·cm · "
-        f"Raman A₁g/E₂g = {raman_best:.2f} · "
-        f"Loading = {best['loading']:.1f} µg/cm²"
-    )
+    st.markdown('<div class="section-header">TARGET SYNTHESIS PARAMETERS</div>',
+                unsafe_allow_html=True)
+    param_df = pd.DataFrame({
+        'Parameter': ['Annealing temp','Deposition cycles','S-layer thickness','Layer #','Mo/S ratio'],
+        'Value':     [f"{best_inv['temp']:.0f} °C", f"{best_inv['cycles']:.0f}",
+                      f"{best_inv['s_thick']:.1f} Å", f"{best_inv['layer_n']:.0f}",
+                      f"{best_inv['mo_s_ratio']:.2f}"],
+        'Note':      ['Higher T → crystalline but fewer edge sites',
+                      '~1 MoS₂ layer per 5 cycles (QCM calibrated, Jeon)',
+                      'Key lever for Mo/S ratio and S-vacancy density',
+                      '≤3L: MBE required (k⁰ ×167, Manyepedza 2022)',
+                      '>0.58: Mo+MoS₂ coexistence — MBE Mo-flux control']
+    })
+    st.dataframe(param_df, use_container_width=True, hide_index=True)
 
 
-elif page == "Trend analysis":
-    st.markdown("## Experimental trend analysis")
-    st.markdown("Data from Jeon et al. ACS Nano 2026 — 14 MBE-grown MoS₂ samples in 1M KOH")
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: FEATURE IMPORTANCE
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "🧮 Feature Importance":
+    st.markdown("# Feature Importance")
+    st.markdown("<div style='color:#666;font-size:0.9em;margin-bottom:20px;'>"
+                "Random Forest LOO feature importance. "
+                "GP used for predictions; RF shown here for interpretability.</div>",
+                unsafe_allow_html=True)
 
-    target_sel = st.selectbox("Performance variable",
-                               options=list(TARGETS.keys()),
-                               format_func=lambda k: f"{TARGETS[k][0]} ({TARGETS[k][1]})")
+    st.markdown('<div class="section-header">MODEL PERFORMANCE — LOO CV</div>',
+                unsafe_allow_html=True)
+    perf_rows = []
+    for k in TARGETS:
+        n, u, _ = TARGETS[k]
+        perf_rows.append({'Property':n,'Unit':u,
+                          'GP R²':round(gp_scores[k]['r2'],3),
+                          'GP MAE':round(gp_scores[k]['mae'],3),
+                          'RF R²':round(rf_scores[k]['r2'],3),
+                          'RF MAE':round(rf_scores[k]['mae'],3)})
+    st.dataframe(pd.DataFrame(perf_rows), use_container_width=True)
+    st.caption("⚠ n=14 — LOO scores have high variance. GP is primary predictor; RF here for importance only.")
 
-    name, unit, better = TARGETS[target_sel]
+    fi_colors = {'layer_n':'#9B59B6','mo_s_ratio':'#E84040','ecsa':'#2DCE89'}
+    fi_names  = {'layer_n':'Layer #','mo_s_ratio':'Mo/S ratio','ecsa':'ECSA'}
 
-    fig = go.Figure()
-    x_labels = {'T': 'Annealing temperature (°C)',
-                 'N': 'Deposition cycles',
-                 'M': 'S-layer thickness (Å)'}
-    x_cols   = {'T': 'temp', 'N': 'cycles', 'M': 's_thick'}
+    imp_target = st.selectbox("Property for importance",
+        options=list(TARGETS.keys()),
+        format_func=lambda k: f"{TARGETS[k][0]} ({TARGETS[k][1]})")
 
-    for ser, color in SERIES_COLORS.items():
-        sub = df[df.series == ser].sort_values(x_cols[ser])
-        fig.add_trace(go.Scatter(
-            x=sub[x_cols[ser]], y=sub[target_sel],
-            mode='lines+markers',
-            name=f'Series {ser} ({x_labels[ser].split("(")[0].strip()})',
-            line=dict(color=color, width=2),
-            marker=dict(size=9, color=color),
-            text=sub['sample'],
-            hovertemplate='<b>%{text}</b><br>x=%{x}<br>'+target_sel+'=%{y:.2f}<extra></extra>'
-        ))
+    imps = rf_imps[imp_target]
+    fig_fi = go.Figure(go.Bar(
+        x=[fi_names[f] for f in FEATURES],
+        y=imps,
+        marker_color=[fi_colors[f] for f in FEATURES],
+        text=[f"{v:.3f}" for v in imps],
+        textposition='outside'))
+    fig_fi.update_layout(
+        title=f"Feature importance — {TARGETS[imp_target][0]}",
+        yaxis_title='Relative importance', yaxis_range=[0, max(imps)*1.25],
+        height=320, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+    st.plotly_chart(fig_fi, use_container_width=True)
 
-    fig.update_layout(
-        title=f"{name} by experimental series",
-        xaxis_title="Independent variable (differs by series — see legend)",
-        yaxis_title=f"{name} ({unit})",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
-        height=450,
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-    )
-    fig.update_xaxes(showgrid=True, gridcolor='rgba(128,128,128,0.15)')
-    fig.update_yaxes(showgrid=True, gridcolor='rgba(128,128,128,0.15)')
-    st.plotly_chart(fig, use_container_width=True)
-
-    show = df[['sample','series','temp','cycles','s_thick', target_sel]].copy()
-    show.columns = ['Sample','Series','Temp (°C)','Cycles','S-thick (Å)', f"{name} ({unit})"]
-    best_idx = show[f"{name} ({unit})"].idxmax() if better=='max' else show[f"{name} ({unit})"].idxmin()
-    st.dataframe(show.reset_index(drop=True), use_container_width=True)
-    st.success(f"**Best value:** {df.iloc[best_idx]['sample']} — {df.iloc[best_idx][target_sel]:.2f} {unit}")
-
-    st.markdown("### Correlation matrix — all variables")
-    num_cols = ['temp','cycles','s_thick','raman','resistivity','ecsa','eta','tafel','rct','tof_ecsa','tof_mass']
-    corr = df[num_cols].corr()
-    fig2 = px.imshow(corr, text_auto=".2f", aspect="auto",
-                     color_continuous_scale='RdBu_r', zmin=-1, zmax=1,
-                     title="Pearson correlation between synthesis variables and performance metrics")
-    fig2.update_layout(height=500)
-    st.plotly_chart(fig2, use_container_width=True)
-
-
-elif page == "Feature importance":
-    st.markdown("## Random Forest — Feature importance")
-    st.markdown("""
-    Random Forest trained on 14 experimental samples with **Leave-One-Out cross-validation**.
-    Feature importance shows which synthesis variable (temperature, cycles, S-thickness)
-    drives each performance metric most.
-    Note: predictions on the Predictor page use the Gaussian Process model.
-    This page uses Random Forest specifically for its feature importance scores.
-    """)
-
-    st.markdown("### Model performance (Leave-One-Out CV)")
-    perf_data = []
-    for key in TARGETS:
-        name, unit, _ = TARGETS[key]
-        perf_data.append({
-            'Property': name, 'Unit': unit,
-            'GP LOO R²': round(gp_scores[key]['r2'], 3),
-            'GP LOO MAE': round(gp_scores[key]['mae'], 3),
-            'RF LOO R²': round(rf_scores[key]['r2'], 3),
-            'RF LOO MAE': round(rf_scores[key]['mae'], 3),
-        })
-    perf_df = pd.DataFrame(perf_data)
-    st.dataframe(perf_df, use_container_width=True)
-    st.caption("⚠ With only 14 samples, LOO scores indicate high uncertainty. GP is used for predictions; RF is shown here for feature importance only.")
-
-    st.markdown("### Feature importance by output variable")
-    imp_data = []
-    for key in TARGETS:
-        name, unit, _ = TARGETS[key]
-        for i, feat in enumerate(FEATURES):
-            imp_data.append({
-                'Property': name,
-                'Feature': FEATURE_LABELS[feat],
-                'Importance': rf_importances[key][i]
-            })
-    imp_df = pd.DataFrame(imp_data)
-
-    target_sel2 = st.selectbox("Select property",
-                                options=list(TARGETS.keys()),
-                                format_func=lambda k: f"{TARGETS[k][0]} ({TARGETS[k][1]})",
-                                key='imp_sel')
-    sub_imp = imp_df[imp_df['Property'] == TARGETS[target_sel2][0]]
-
-    fig3 = px.bar(sub_imp, x='Feature', y='Importance',
-                  color='Feature',
-                  color_discrete_map={
-                      FEATURE_LABELS['layer_n']:    '#9B59B6',
-                      FEATURE_LABELS['mo_s_ratio']: '#E84040',
-                      FEATURE_LABELS['ecsa']:       '#1D9E75',
-                  },
-                  title=f"Feature importance for {TARGETS[target_sel2][0]}",
-                  labels={'Importance': 'Relative importance (0–1)'})
-    fig3.update_layout(showlegend=False, height=350,
-                       plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
-    st.plotly_chart(fig3, use_container_width=True)
-
-    st.markdown("### Feature importance — all properties")
-    heat_data = np.array([[rf_importances[k][i] for i in range(len(FEATURES))] for k in TARGETS])
-    heat_df = pd.DataFrame(heat_data,
+    # Heatmap of all importances
+    heat = np.array([[rf_imps[k][i] for i in range(3)] for k in TARGETS])
+    heat_df = pd.DataFrame(heat,
                            index=[TARGETS[k][0] for k in TARGETS],
-                           columns=[FEATURE_LABELS[f] for f in FEATURES])
-    fig4 = px.imshow(heat_df, text_auto=".2f", aspect="auto",
-                     color_continuous_scale='Greens', zmin=0, zmax=1,
-                     title="Feature importance matrix (Random Forest)")
-    fig4.update_layout(height=400)
-    st.plotly_chart(fig4, use_container_width=True)
-
-    st.markdown("### Partial dependence — how each variable drives performance")
-    pd_target = st.selectbox("Property for partial dependence",
-                              options=list(TARGETS.keys()),
-                              format_func=lambda k: f"{TARGETS[k][0]} ({TARGETS[k][1]})",
-                              key='pd_sel')
-    pd_feature = st.selectbox("Variable to vary",
-                               options=FEATURES,
-                               format_func=lambda k: FEATURE_LABELS[k],
-                               key='pd_feat')
-
-    rf_model = rf_models[pd_target]
-    ranges = {
-        'layer_n':    np.linspace(1, 20, 60),
-        'mo_s_ratio': np.linspace(0.45, 0.90, 60),
-        'ecsa':       np.linspace(2.0, 12.0, 60),
-    }
-    defaults = {'layer_n': 5, 'mo_s_ratio': 0.56, 'ecsa': 8.0}
-
-    x_range = ranges[pd_feature]
-    X_pd = np.array([[
-        x if pd_feature == 'layer_n'    else defaults['layer_n'],
-        x if pd_feature == 'mo_s_ratio' else defaults['mo_s_ratio'],
-        x if pd_feature == 'ecsa'       else defaults['ecsa'],
-    ] for x in x_range])
-
-    y_means, y_lowers, y_uppers = [], [], []
-    for row in X_pd:
-        m, lo, hi, _ = gp_predict(pd_target, row[0], row[1], row[2])
-        y_means.append(m)
-        y_lowers.append(lo)
-        y_uppers.append(hi)
-    y_means  = np.array(y_means)
-    y_lowers = np.array(y_lowers)
-    y_uppers = np.array(y_uppers)
-
-    exp_x = df[pd_feature].values
-    exp_y = df[pd_target].values
-
-    in_range_mask = {
-        'layer_n':    (x_range >= 2)    & (x_range <= 20),
-        'mo_s_ratio': (x_range >= 0.46) & (x_range <= 0.82),
-        'ecsa':       (x_range >= 3.5)  & (x_range <= 9.2),
-    }
-
-    fig5 = go.Figure()
-    fig5.add_trace(go.Scatter(
-        x=np.concatenate([x_range, x_range[::-1]]),
-        y=np.concatenate([y_uppers, y_lowers[::-1]]),
-        fill='toself', fillcolor='rgba(127,119,221,0.15)',
-        line=dict(color='rgba(255,255,255,0)'),
-        name='95% credible interval', showlegend=True
-    ))
-    fig5.add_trace(go.Scatter(x=x_range, y=y_means, mode='lines',
-                               name='GP mean', line=dict(color='#7F77DD', width=2)))
-    exp_in = x_range[in_range_mask[pd_feature]]
-    y_in   = y_means[in_range_mask[pd_feature]]
-    fig5.add_trace(go.Scatter(x=exp_in, y=y_in, mode='lines',
-                               name='Experimental range',
-                               line=dict(color='#1D9E75', width=3)))
-    colors_exp = [SERIES_COLORS[s] for s in df['series']]
-    fig5.add_trace(go.Scatter(
-        x=exp_x, y=exp_y, mode='markers',
-        name='Experimental data',
-        marker=dict(size=10, color=colors_exp, symbol='circle',
-                    line=dict(width=1, color='white')),
-        text=df['sample'],
-        hovertemplate='<b>%{text}</b><br>%{x:.1f} → %{y:.2f}<extra></extra>'
-    ))
-    fig5.add_vrect(x0=ranges[pd_feature][in_range_mask[pd_feature]][0],
-                   x1=ranges[pd_feature][in_range_mask[pd_feature]][-1],
-                   fillcolor="rgba(29,158,117,0.08)", line_width=0,
-                   annotation_text="Experimental range", annotation_position="top left")
-    fig5.update_layout(
-        title=f"Partial dependence: {TARGETS[pd_target][0]} vs {FEATURE_LABELS[pd_feature]}",
-        xaxis_title=FEATURE_LABELS[pd_feature],
-        yaxis_title=f"{TARGETS[pd_target][0]} ({TARGETS[pd_target][1]})",
-        height=420,
-        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-    )
-    fig5.update_xaxes(showgrid=True, gridcolor='rgba(128,128,128,0.15)')
-    fig5.update_yaxes(showgrid=True, gridcolor='rgba(128,128,128,0.15)')
-    st.plotly_chart(fig5, use_container_width=True)
-    st.caption("Purple band = GP 95% credible interval. Green line = interpolation within experimental data. Dots = real data (colored by series T/N/M).")
+                           columns=[fi_names[f] for f in FEATURES])
+    fig_heat = px.imshow(heat_df, text_auto=".2f", aspect="auto",
+                         color_continuous_scale='Greens', zmin=0, zmax=1,
+                         title="Feature importance matrix (all targets)")
+    fig_heat.update_layout(height=360)
+    st.plotly_chart(fig_heat, use_container_width=True)
 
 
-elif page == "Theoretical basis":
-    st.markdown("## Theoretical framework — 13 papers integrated")
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: THEORETICAL BASIS
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "📚 Theoretical Basis":
+    st.markdown("# Theoretical Framework")
+    st.markdown("<div style='color:#666;font-size:0.9em;margin-bottom:20px;'>"
+                "13 papers integrated — DFT, electrochemistry, surface science, epitaxy.</div>",
+                unsafe_allow_html=True)
 
     papers = [
         ("1 · Hanslin, Jónsson & Akola — PCCP 2023 (DFT)",
-         "Exposed Mo sites on edges have activation barriers <0.5 eV at 0 V vs. SHE. "
-         "Low Raman A₁g/E₂g → more Mo exposed → more active. Theoretical overpotential "
-         "Mo₀ edge ≈ 0.25 V, consistent with −0.33 V for MoS-N10. S-bound H has Heyrovsky "
-         "barriers >1.5 eV (kinetically dead). Extrapolating: T >900°C → grain coalescence "
-         "eliminates Mo edge sites → η >−0.7 V expected."),
+         "Exposed Mo edge sites: activation barriers <0.5 eV at 0 V vs SHE. Low Raman A₁g/E₂g → more Mo exposed → more active. Theoretical overpotential Mo₀ edge ≈0.25 V. S-bound H: Heyrovsky barriers >1.5 eV (kinetically dead). T>900°C → grain coalescence → η >−0.7 V expected."),
         ("2 · Li, Qin & Voiry — ACS Nano 2019",
-         "S vacancies follow a non-linear optimum: too few → inert basal plane, optimal → "
-         "max TOF, too many → structural collapse. Direct analog to Jeon M series: "
-         "M3.0–M6.0 is the optimal S-deficiency window."),
+         "S vacancies follow non-linear optimum: too few → inert basal plane, optimal → max TOF, too many → structural collapse. Direct analog to Jeon M-series: M3.0–M6.0 is the optimal S-deficiency window."),
         ("3 · Geng et al. — Nature Communications 2016",
-         "Metallic 1T phase: resistivity 0.48 Ω·cm, Rct ≈1 Ω, η = −175 mV. Mixed "
-         "Mo+MoS₂ domains in N10 and M3–M6 replicate this partially via metallic Mo pathways."),
+         "1T metallic phase: ρ=0.48 Ω·cm, Rct≈1 Ω, η=−175 mV. Mixed Mo+MoS₂ domains in N10 and M3–M6 replicate this via metallic Mo pathways."),
         ("4 · Muhyuddin et al. — J. Energy Chemistry 2023 (review)",
-         "Tafel <60 mV/dec → Heyrovsky rate-limiting. 60–120 → Volmer–Heyrovsky. "
-         ">120 → Volmer rate-limiting (slow H₂O dissociation in alkaline KOH). "
-         "N10 (80 mV/dec) is the only sample in the Volmer–Heyrovsky regime."),
+         "Tafel <60 mV/dec → Heyrovsky RDS. 60–120 → Volmer–Heyrovsky. >120 → Volmer RDS (slow H₂O dissociation in alkaline KOH). N10 (80 mV/dec) is the only Jeon sample in Volmer–Heyrovsky regime."),
         ("5 · Jeon et al. — ACS Nano 2026 (experimental base)",
-         "14 MBE samples in 1M KOH. Global optimum: MoS-N10 (η=−0.33V, Tafel=80, "
-         "ECSA=8.0 cm², Rct=52.8). T↑ → resistivity↑, ECSA↓, Tafel↑. Cycles↑ → "
-         "resistivity↑ monotonically. S-thickness has non-linear optimum at 3–6 Å."),
+         "14 MBE samples in 1M KOH. Global optimum: MoS-N10 (η=−0.33V, Tafel=80, ECSA=8.0 cm², Rct=52.8). T↑ → resistivity↑, ECSA↓, Tafel↑. Cycles↑ → resistivity↑ monotonically. S-thickness non-linear optimum at 3–6 Å."),
         ("6 · Zhu et al. — Nature Communications 2019",
-         "2H–2H grain boundaries and 2H–1T phase boundaries are active HER sites. "
-         "ΔGH* = −0.13 eV for 2H–1T boundaries (≈ Pt at −0.18 eV). More boundaries → "
-         "better performance linearly. Tafel 73–75 mV/dec with composite boundaries, "
-         "stable >200 h. Low cycles and moderate S-deficiency maximize boundary density."),
+         "2H–2H and 2H–1T grain boundaries are active HER sites. ΔGH* = −0.13 eV for 2H–1T boundaries (≈ Pt at −0.18 eV). More boundaries → better performance. Tafel 73–75 mV/dec, stable >200 h."),
         ("7 · Yang et al. — RSC Advances 2023 (DFT)",
-         "Defect + strain synergy: Vs, VMoS3, VMoS6 are active sites. Without strain: "
-         "ΔGH* >0.22 eV. With 1% tensile: VMoS3 reaches ΔGH* ≈ 0 eV. MBE on Si: "
-         "~1–2% tensile mismatch activates vacancy sites. d-band center of Mo governs "
-         "H adsorption (R²=0.97–0.99). Volmer barrier on VMo = 0.43 eV."),
+         "Defect + strain synergy: Vs, VMoS3, VMoS6 are active sites. Without strain: ΔGH*>0.22 eV. With 1% tensile: VMoS3 → ΔGH*≈0 eV. MBE on Si: ~1–2% tensile mismatch activates vacancy sites."),
         ("8 · Integrated mechanistic picture",
-         "The MoS-N10 optimum results from the convergence of 4 mechanisms: "
-         "(1) intermediate thickness → low resistivity 8.99 Ω·cm; "
-         "(2) MBE strain + Vs vacancies → ΔGH* ≈ 0 eV; "
-         "(3) high 2H–1T boundary density → ΔGH* ≈ −0.13 eV; "
-         "(4) Mo conductive domains → Rct = 52.8 Ω·cm². "
-         "No single mechanism alone produces the optimum — synergy is essential."),
-        ("9 · Tsai, Li, Park et al. — Nature Communications 2017 (DFT + experiment)",
-         "Electrochemical desulfurization generates S-vacancies on the MoS₂ basal plane at "
-         "potentials ≥ −1.0 V vs RHE. DFT: S-vacancy formation becomes thermodynamically "
-         "favourable at −1.0 V; optimal concentration 12.5–15.6% of surface atoms (ΔGH* ≈ 0 eV). "
-         "Vacancies form in clusters (zigzag pattern) — clustered vacancies more stable than dispersed. "
-         "EC desulfurization (onset ~−0.6 V) is as effective as Ar-plasma treatment and scalable to "
-         "any MoS₂ morphology. Relevance to Jeon: MBE growth with low S-flux (M2.0–M3.0) generates "
-         "vacancy concentrations in the 12.5–15.6% optimal window; operating HER potentials "
-         "(−0.33 to −0.58 V) are below the EC desulfurization threshold, so vacancies are "
-         "fixed by growth conditions rather than in-situ activation."),
-        ("10 · Li, Qin, Ries & Voiry et al. — ACS 2019 (Stage 1/2 framework)",
-         "HER activity from defective multilayer MoS₂ divides into two distinct regimes: "
-         "Stage 1 (<~20% surface S-vacancies): isolated 'point defects', moderate HER improvement. "
-         "Stage 2 (>~50% vacancies): large undercoordinated Mo regions, TOF ~2 s⁻¹ at −160 mV "
-         "in 0.1 M KOH — among the best reported for MoS₂. "
-         "Amorphous MoS₂ outperforms 2H in acid; 2H with ultra-high vacancies dominates in alkaline. "
-         "Relevance to Jeon: M-series samples span Stage 1→2 transition. M2.0–M2.5 approach Stage 2 "
-         "(very low S, Mo-rich), explaining their surprisingly competitive η despite high Tafel slopes. "
-         "MoS-N10 sits optimally at the Stage 1 peak where point defects and conductivity balance."),
+         "MoS-N10 optimum from convergence of 4 mechanisms: (1) intermediate thickness → ρ=8.99 Ω·cm; (2) MBE strain + Vs → ΔGH*≈0 eV; (3) high 2H–1T boundary density → ΔGH*≈−0.13 eV; (4) Mo conductive domains → Rct=52.8 Ω·cm². Synergy essential — no single mechanism explains the optimum alone."),
+        ("9 · Tsai, Li, Park et al. — Nature Communications 2017",
+         "EC desulfurization generates S-vacancies at ≥−1.0 V vs RHE. Optimal concentration 12.5–15.6% surface atoms (ΔGH*≈0 eV). MBE M2.0–M3.0 sits in this optimal window by design."),
+        ("10 · Li, Qin, Ries & Voiry — ACS 2019 (Stage 1/2 framework)",
+         "Stage 1 (<~20% S-vacancies): isolated point defects, moderate HER improvement. Stage 2 (>~50%): large undercoordinated Mo regions, TOF ~2 s⁻¹ at −160 mV in 0.1M KOH. M-series spans Stage 1→2 transition."),
         ("11 · Sherwood et al. — ACS Nano 2024 (XPS phase fingerprinting)",
-         "Establishes the rigorous XPS framework for distinguishing 2H MoS₂, 1T MoS₂, and "
-         "sulfur-depleted MoS₂₋ₓ using a four split-orbit peak model (POS-A/B/C/D). "
-         "Key findings directly relevant to Mo/S ratio descriptor in this tool: "
-         "(1) Stoichiometric 2H MoS₂ has S/Mo = 2.2–2.5 (Mo/S ≈ 0.40–0.455), not 0.50 as often assumed. "
-         "(2) Ar⁺ ion bombardment preferentially removes S, driving S/Mo from 2.5 → 1.1 (Mo/S → 0.91) "
-         "— this defines the physical upper limit for Mo/S in defected MoS₂₋ₓ. "
-         "(3) 2H→1T phase transition is triggered by S removal (S plane gliding); "
-         "the 1T phase peak is at 228.7 eV (Mo 3d₅/₂) vs 229.3 eV for 2H and 228.1 eV for MoS₂₋ₓ. "
-         "(4) For as-cast 2H MoS₂ electrodes the S/Mo depletion is stronger than for powders "
-         "(final S/Mo ~1.1 vs ~1.6), confirming greater interfacial disorder. "
-         "Relevance to Jeon M-series: MoS-M2.0–M3.0 (confirmed Mo⁰ + MoS₂ by XANES/EXAFS) correspond "
-         "to Mo/S ≈ 0.72–0.82 in this tool's scale — within the S-depleted MoS₂₋ₓ regime defined here. "
-         "This paper scientifically justifies the Mo/S ratio slider range (0.45–0.90) used in this tool "
-         "and validates that Mo/S is a measurable, physically meaningful descriptor of phase composition. "
-         "Critical caveat: the Mo/S values per Jeon sample are estimated (XPS not reported per sample) — "
-         "this paper provides the scale calibration, not the per-sample measurements."),
-        ("12 · Choudhury, Zhang, Al Balushi & Redwing — Penn State Review (CVD vs MBE epitaxy)",
-         "Comprehensive review of vapor-phase deposition methods for TMDs, providing the scientific "
-         "basis for the Chemical vs Physical method recommendation in this tool. "
-         "Key distinctions: "
-         "(1) CVD/PVT: S/Mo vapor ratio varies as a function of substrate position in the tube — "
-         "cannot independently control stoichiometry, layer number, and crystallinity simultaneously. "
-         "Sulfur-rich growth conditions are required by thermodynamics (Mo-S phase diagram: MoS₂ "
-         "in equilibrium with sulfur vapor), making intentional Mo-rich growth impossible in CVD. "
-         "(2) MBE: independent control of Mo flux (electron-beam evaporator) and S flux (effusion "
-         "cell, calibrated by QCM), RHEED in-situ monitoring, submonolayer precision. Each "
-         "deposition cycle = ~1 MoS₂ monolayer by design (confirmed in Jeon by QCM calibration). "
-         "(3) MBE limitation: low S sticking coefficient under UHV conditions → smaller domains "
-         "than CVD/MOCVD; compensated by growth on van der Waals substrates or Si (Jeon). "
-         "(4) Layer # control: CVD nucleation density depends on substrate position relative to "
-         "metal source — cannot reliably produce <5L films reproducibly. MBE: layer count set by "
-         "number of deposition cycles (Jeon N-series: N5→N50 directly maps to 5→50 cycles). "
-         "Raman E₂g–A₁g separation is a fingerprint of layer number confirmed by AFM/LEEM. "
-         "Conclusion: the four key descriptors (Layer #, Mo/S ratio, ECSA, Physical props) "
-         "can only be independently tuned by MBE — CVD can achieve stoichiometric, thick-film "
-         "conditions but cannot access the Mo-rich, few-layer regime that optimizes HER."),
-        ("13 · Manyepedza, Courtney, Snowden, Jones & Rees — J. Phys. Chem. C 2022 "
-         "(Impact electrochemistry: Layer # as HER activity descriptor) ★ PAPER COMPLETO",
-         "Direct experimental validation that Layer # is the primary kinetic HER descriptor for MoS₂. "
-         "Using impact electrochemistry (single nanoparticles colliding with an electrode), the study "
-         "isolates the intrinsic catalytic properties of MoS₂ free from ensemble averaging effects.\n\n"
-         "━━━ DATOS CUANTITATIVOS MEDIDOS (✅ experimental) ━━━\n\n"
-         "Onset potentials (pH 2, H₂SO₄, confirmado por cromatografía de gases):\n"
-         "  • 1–3 trilayers (nanoimpacto):   −0.10 V vs RHE  ← onset más bajo reportado sin Pt\n"
-         "  • MoS₂ electrodepositado:        −0.29 V vs RHE  (j = 0.5 mA cm⁻²)\n"
-         "  • NPs dropcast (bulk):           −0.49 V vs RHE\n"
-         "  → Ventaja de 1–3 TL: 390 mV mejor que NPs bulk; 190 mV mejor que electrodeposición.\n\n"
-         "Cinética (mecanismo HER, Heyrovsky rate-determining):\n"
-         "  • Tafel slope electrodepositado: 45 mV dec⁻¹\n"
-         "  • Coeficiente de transferencia α: 0.64–0.67 (Tafel + DigiElch waveshape fitting, n≥5)\n"
-         "  • k⁰ electrodepositado: (3.17 ± 0.3) × 10⁻⁵ cm s⁻¹\n"
-         "  • k⁰ vs trilayers (McKelvey/Brunet Cabre 2021, citado en este paper):\n"
-         "      1 trilayer → k⁰ ≈ 250 cm s⁻¹\n"
-         "      3 trilayers → k⁰ ≈ 1.5 cm s⁻¹   (factor 167× de diferencia)\n"
-         "  → La transición 1→3 TL reduce k⁰ 167× — fundamento cinético del umbral Layer# ≤3.\n\n"
-         "AFM (confirmación directa de espesores, Fig. 9B):\n"
-         "  • 1 trilayer:  0.6–0.7 nm  (pico mínimo en mica)\n"
-         "  • 2 trilayers: 1.3–1.4 nm  (factor ×2 exacto)\n"
-         "  • d = 0.615 nm/TL (bulk MoS₂) | 0.67 nm/TL (nanosheet aislado)\n"
-         "  → MISMO valor 0.615 nm/TL usado para estimar layer_n del dataset Jeon via XRD Scherrer.\n\n"
-         "RDE (rotating disk electrode) — tres onsets resueltos:\n"
-         "  • −0.10 V (1–3 TL exfoliados) | −0.25 V (intermedios) | −0.50 V (bulk 90 nm)\n"
-         "  → Distribución de tamaños por sonicación genera población multi-modal.\n\n"
-         "Eficiencia Faradaica (H₂ identificado por GC):\n"
-         "  • 45% @ −0.15 V vs RHE | 48% @ −0.40 V vs RHE\n\n"
-         "XPS (composición química):\n"
-         "  • MoS₂ electrodepositado: S/Mo = 2.2 → Mo/S = 0.455\n"
-         "  → Confirma el endpoint estequiométrico de la escala Mo/S usada en este tool.\n\n"
-         "━━━ RELEVANCIA PARA EL PREDICTOR ━━━\n\n"
-         "1. Umbral Layer# ≤3 → 🔬 MBE obligatorio: respaldado cuantitativamente por k⁰ 167×\n"
-         "   y onset −0.10 V medido con AFM + GC. CVD no puede controlar <5L (Choudhury §2.2).\n"
-         "2. Constante 0.615 nm/TL: cross-validada entre AFM (este paper) y XRD Scherrer\n"
-         "   (usada para estimar layer_n del dataset Jeon — misma fuente física).\n"
-         "3. Endpoint Mo/S = 0.455 (S/Mo=2.2): confirmado por XPS de electrodeposición —\n"
-         "   consistente con escala Sherwood 2024 en el slider del tool.\n"
-         "4. Mecanismo Heyrovsky RDS (45 mV dec⁻¹): consistente con N10 (80 mV dec⁻¹)\n"
-         "   en régimen Volmer–Heyrovsky (Muhyuddin review, paper 4 del framework).\n"
-         "5. Eficiencia Faradaica 45–48%: aplica a NPs sonicadas (chemical synthesis) —\n"
-         "   MBE films con control de capas esperados ≥ este valor (pendiente experimental)."),
+         "XPS 4-peak model distinguishes 2H MoS₂, 1T MoS₂, MoS₂₋ₓ. Key: stoichiometric 2H = S/Mo=2.2–2.5 (Mo/S≈0.40–0.455). Ar⁺ bombardment drives S/Mo→1.1 (Mo/S→0.91) — upper limit. Validates Mo/S slider range (0.45–0.90)."),
+        ("12 · Choudhury, Zhang, Al Balushi & Redwing — Penn State Review (CVD vs MBE)",
+         "CVD: S/Mo vapor ratio varies with substrate position — cannot independently control stoichiometry + layer number + crystallinity. MBE: independent Mo flux (e-beam) and S flux (effusion cell + QCM), RHEED monitoring. CVD cannot reproduce <5L reliably. MBE: layer count set by deposition cycles. Conclusion: 4 key descriptors only independently tunable by MBE."),
+        ("13 · Manyepedza et al. — J. Phys. Chem. C 2022 ★",
+         "Impact electrochemistry (single NPs). Onset: 1–3 TL → −0.10 V vs RHE (GC confirmed). Electrodep.: −0.29 V. Bulk NPs: −0.49 V. k⁰: 1 TL→250 cm/s, 3 TL→1.5 cm/s (167× factor). AFM: 0.615 nm/TL (same value used for layer_n estimation in Jeon). XPS: S/Mo=2.2 → Mo/S=0.455 (stoichiometric endpoint). Faradaic efficiency 45–48%."),
     ]
-
     for title, body in papers:
         with st.expander(title):
             st.write(body)
 
-    st.markdown("---")
-    st.markdown("### Key descriptors summary")
-    desc_data = {
-        'Descriptor': ['Raman A₁g/E₂g', 'Resistivity (Ω·cm)', 'Tafel slope (mV/dec)',
-                        'ECSA (cm²)', 'Rct (Ω·cm²)', 'ΔGH* (eV)',
-                        'Mo/S atomic ratio ⚠', 'Layer # ⚠'],
-        'What it measures': [
-            'Mo vs S edge site exposure',
-            'Electronic conductivity (Mo⁰ domains)',
-            'Rate-limiting HER mechanism',
-            'Electrochemically active surface area',
-            'Interfacial charge transfer resistance',
-            'H adsorption free energy (activity descriptor)',
-            'Phase composition: 2H MoS₂ ↔ MoS₂₋ₓ ↔ Mo⁰/MoS₂',
-            'Film thickness proxy → edge/basal site ratio + kinetic constant k⁰',
-        ],
-        'Optimal value': ['<1.8', '<12', '60–100', '>7', '<70', '≈ 0',
+    st.markdown('<div class="section-header">KEY DESCRIPTORS SUMMARY</div>',
+                unsafe_allow_html=True)
+    desc_df = pd.DataFrame({
+        'Descriptor':    ['Layer # ⚠','Mo/S ratio ⚠','ECSA ✅','Raman A₁g/E₂g ✅',
+                          'Resistivity ✅','Rct ✅','ΔGH* (DFT)'],
+        'Measures':      ['Film thickness → edge/basal ratio + k⁰',
+                          '2H MoS₂ ↔ MoS₂₋ₓ ↔ Mo⁰/MoS₂ phase',
+                          'Electrochemically active surface area',
+                          'Mo vs S edge site exposure',
+                          'Electronic conductivity (Mo⁰ domains)',
+                          'Interfacial charge transfer resistance',
+                          'H adsorption free energy'],
+        'Optimal':       ['≤3L → onset −0.10 V, k⁰~250 cm/s',
                           '0.55–0.72 (Mo⁰/MoS₂ coexistence)',
-                          '≤3 trilayers → onset −0.10 V vs RHE, k⁰ ~250 cm s⁻¹ (Manyepedza 2022)'],
-        'Data source': ['✅ Jeon 2026', '✅ Jeon 2026', '✅ Jeon 2026',
-                        '✅ Jeon 2026', '✅ Jeon 2026', 'DFT (Hanslin/Yang)',
-                        '⚠ Scale: Sherwood 2024 + Manyepedza 2022 XPS; values: estimated from Jeon XANES',
-                        '⚠ Derived: Jeon XRD Scherrer ÷ 0.615 nm/TL; '
-                        '0.615 nm/TL confirmed AFM: Manyepedza 2022 Fig.9B; '
-                        'threshold: Manyepedza impact electrochemistry + GC'],
-        'Key paper': ['Hanslin et al.', 'Geng et al.', 'Muhyuddin et al.',
-                      'Li/Voiry et al.', 'Zhu et al.', 'Yang et al.',
-                      'Sherwood 2024 (paper 11) + Manyepedza 2022 (paper 13)',
-                      'Manyepedza 2022 (paper 13) + Jeon 2026 (Fig. 1a, 2a)']
-    }
-    st.dataframe(pd.DataFrame(desc_data), use_container_width=True)
-    st.caption("⚠ = Estimated descriptor. ✅ = Directly measured and reported in Jeon et al. 2026 Table 1.")
+                          '>7 cm²','<1.8',
+                          '<12 Ω·cm','<70 Ω·cm²','≈ 0 eV'],
+        'Source':        ['⚠ XRD Scherrer / Manyepedza 2022 AFM',
+                          '⚠ Scale: Sherwood 2024 + Manyepedza XPS',
+                          '✅ Jeon 2026 Table 1','✅ Jeon 2026',
+                          '✅ Jeon 2026','✅ Jeon 2026','DFT: Hanslin/Yang'],
+    })
+    st.dataframe(desc_df, use_container_width=True)
+    st.caption("⚠ = estimated descriptor · ✅ = directly measured in Jeon et al. 2026")
 
 
-elif page == "About":
-    st.markdown("## About this tool")
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE: ABOUT
+# ══════════════════════════════════════════════════════════════════════════════
+elif page == "ℹ️ About":
+    st.markdown("# About")
     st.markdown("""
-    ### MoS₂ HER Trend Predictor
+**MoS₂ HER Trend Predictor** — theory-guided GP prediction for MBE-grown MoS₂ in 1M KOH.
 
-    This tool provides theory-guided trend prediction and Random Forest analysis
-    for MoS₂ thin films grown by Molecular Beam Epitaxy (MBE) for the
-    Hydrogen Evolution Reaction (HER).
+### Experimental base
+**Jeon et al., ACS Nano 2026** — 14 MBE samples on Si.
+- **T-series**: Annealing temperature 600–800°C (cycles=50, S=9.0 Å)
+- **N-series**: Deposition cycles 5–50 (800°C, S=3.0 Å)
+- **M-series**: S-layer thickness 2.0–9.0 Å (800°C, cycles=50)
 
-    ---
+### Machine learning
+| Component | Detail |
+|---|---|
+| Primary model | Gaussian Process (Matérn ν=2.5, ARD, calibrated 95% CI) |
+| Secondary model | Random Forest (300 trees) — feature importance only |
+| Validation | Leave-One-Out cross-validation (n=14) |
+| Features | Layer #, Mo/S ratio, ECSA (3 key descriptors) |
+| Targets | η, Tafel, Rct, Raman ratio, resistivity, TOF×2 |
 
-    ### Experimental basis
-    **Jeon et al., ACS Nano 2026** — 14 MBE-grown MoS₂ samples on Si substrates,
-    characterized in 1M KOH alkaline electrolyte. Three independent variable series:
-    - **T series**: Annealing temperature (600–800°C), fixed 50 cycles, S=9.0 Å
-    - **N series**: Deposition cycles (5–50), fixed 800°C, S=3.0 Å
-    - **M series**: S-layer thickness (2.0–9.0 Å), fixed 800°C, 50 cycles
+### CVD vs MBE scoring
+| Criterion | Max pts | Basis |
+|---|---|---|
+| Layer # | 3 | k⁰ kinetics (Manyepedza 2022) |
+| Mo/S ratio | 3 | Phase control (Choudhury review) |
+| ECSA | 1 | Edge site uniformity (Jeon 2026) |
+| Rct | 1 | Mo⁰ domain requirement (Jeon 2026) |
 
-    ---
+Score ≥3 → MBE · Score 1–2 → Both (MBE preferred) · Score 0 → CVD
 
-    ### Theoretical framework (13 papers)
-    | # | Reference | Key contribution |
-    |---|-----------|-----------------|
-    | 1 | Hanslin et al., PCCP 2023 | DFT: Mo edge sites, Raman proxy |
-    | 2 | Li & Voiry, ACS Nano 2019 | S vacancy optimization |
-    | 3 | Geng et al., Nat. Commun. 2016 | 1T metallic phase benchmark |
-    | 4 | Muhyuddin et al., J. Energy Chem. 2023 | HER mechanism review |
-    | 5 | Jeon et al., ACS Nano 2026 | Experimental base data |
-    | 6 | Zhu et al., Nat. Commun. 2019 | Domain boundary activation |
-    | 7 | Yang et al., RSC Adv. 2023 | Defect-strain synergy DFT |
-    | 8 | Integrated picture | Mechanistic convergence |
-    | 9 | Tsai, Li, Park et al., Nat. Commun. 2017 | EC desulfurization, optimal vacancy conc. 12.5–15.6% |
-    | 10 | Li, Qin, Ries & Voiry et al., ACS 2019 | Stage 1/2 vacancy framework, TOF ~2 s⁻¹ in KOH |
-    | 11 | Sherwood et al., ACS Nano 2024 | XPS 4-peak model: 2H/1T/MoS₂₋ₓ fingerprinting; Mo/S scale (S/Mo 2.2→1.1) |
-    | 12 | Choudhury, Zhang, Al Balushi & Redwing, Penn State review | CVD vs MBE: independent flux control, layer precision, stoichiometry |
-    | 13 | Manyepedza et al., J. Phys. Chem. C 2022 ★ | Impact electrochemistry: 1–3 TL onset −0.10 V vs RHE; k⁰ 167× advantage; AFM 0.615 nm/TL confirmed |
+### New in this version
+- **Trend Curves page**: GP mean + 95% CI vs each descriptor, all 3 in one view
+- **2D Heatmaps page**: GP surface over descriptor pairs + CVD/MBE decision map
+- **3D Explorer page**: Layer# × Mo/S × ECSA space, rotatable, GP surface slice
+- **Scoring breakdown**: transparent per-criterion points with references
+- **Radar chart**: performance profile vs closest experimental sample
 
-    ---
-
-    ### New in this version (papers 9, 10 & 13 full)
-    - **Paper 13 fully integrated** (previously abstract only): all quantitative data added —
-      onset potentials, Tafel 45 mV dec⁻¹, k⁰ vs trilayers (1.5–250 cm s⁻¹), AFM heights,
-      Faradaic efficiency 45–48%, XPS endpoint S/Mo=2.2
-    - **Layer # threshold quantified**: k⁰ kinetic advantage (167×) now cited explicitly
-      in `recommend_method()` logic comments and UI tooltips
-    - **0.615 nm/TL cross-validated**: comment in dataset traces this constant to both
-      Manyepedza AFM (Fig. 9B) and Fan et al. JACS 2016
-    - **Mo/S = 0.455 endpoint confirmed**: Manyepedza XPS electrodeposition S/Mo=2.2
-      added as second confirmation of Sherwood 2024 scale
-
-    ---
-
-    ### Machine learning
-    - **Primary model**: Gaussian Process (Matérn ν=2.5 kernel, ARD, calibrated 95% credible intervals)
-    - **Secondary model**: Random Forest (300 trees) — used only for feature importance
-    - **Validation**: Leave-One-Out cross-validation (only valid strategy with n=14)
-    - **Uncertainty**: GP posterior std calibrated against LOO errors — grows naturally outside training data
-    - **Features**: Layer #, Mo/S ratio, ECSA (3 key descriptors)
-    - **Targets**: η, Tafel slope, Rct, Raman ratio, resistivity, TOF (ECSA), TOF (mass)
-
-    ---
-
-    ### Important limitations
-    With only 14 training samples, even GP predictions have high uncertainty.
-    The 95% credible intervals are statistically principled — unlike heuristic percentage ranges —
-    but they are only as reliable as the GP model itself. This tool is designed
-    for **trend analysis and mechanistic understanding**, not precise numerical prediction.
-
-    ---
-
-    *Developed as part of an experimental MoS₂ HER research project.*
-    *Predictor integrates experimental data with multi-paper DFT theoretical framework.*
+⚠ With only 14 training samples, all predictions carry high uncertainty.
+This tool is for **trend analysis and mechanistic understanding**, not precise numerical prediction.
     """)
