@@ -670,11 +670,12 @@ if page == "📊 Predictor":
         col_vals = df[key].values
         vmin, vmax = col_vals.min(), col_vals.max()
         v = vals[key]
-        n_val = (v - vmin) / (vmax - vmin + 1e-9)
+        # Clip to [0,1] — GP predictions can exceed dataset range
+        n_val = float(np.clip((v - vmin) / (vmax - vmin + 1e-9), 0.0, 1.0))
         normed.append(n_val if better == 'max' else 1 - n_val)
 
-    # BUG FIX: best experimental = MoS-N10 (lowest η = -0.33 V, idxmin() not idxmax())
-    best_exp_idx = df['eta'].idxmin()  # most negative η = best HER
+    # best experimental = MoS-N10 (lowest η = -0.33 V)
+    best_exp_idx = df['eta'].idxmin()
     best_exp     = df.loc[best_exp_idx]
     closest_row  = best_match
 
@@ -682,10 +683,15 @@ if page == "📊 Predictor":
     for key in radar_keys:
         _, _, better = TARGETS[key]
         vmin = df[key].min(); vmax = df[key].max()
-        bv = (best_exp[key] - vmin) / (vmax - vmin + 1e-9)
+        bv = float(np.clip((best_exp[key] - vmin) / (vmax - vmin + 1e-9), 0.0, 1.0))
         normed_best.append(bv if better == 'max' else 1 - bv)
-        cv = (closest_row[key] - vmin) / (vmax - vmin + 1e-9)
+        cv = float(np.clip((closest_row[key] - vmin) / (vmax - vmin + 1e-9), 0.0, 1.0))
         normed_closest.append(cv if better == 'max' else 1 - cv)
+
+    # Convert to plain Python lists to avoid numpy type issues with Plotly
+    normed         = [float(x) for x in normed]
+    normed_best    = [float(x) for x in normed_best]
+    normed_closest = [float(x) for x in normed_closest]
 
     fig_radar = go.Figure()
     cats = radar_names + [radar_names[0]]
