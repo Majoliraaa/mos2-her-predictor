@@ -693,20 +693,29 @@ if page == "📊 Predictor":
     normed_best    = [float(x) for x in normed_best]
     normed_closest = [float(x) for x in normed_closest]
 
+    # Helper: convert #RRGGBB hex to rgba string (Plotly requires rgba, not hex+alpha)
+    def hex_rgba(h, a):
+        h = h.lstrip('#')
+        r, g, b = int(h[0:2],16), int(h[2:4],16), int(h[4:6],16)
+        return f'rgba({r},{g},{b},{a})'
+
     fig_radar = go.Figure()
     cats = radar_names + [radar_names[0]]
     fig_radar.add_trace(go.Scatterpolar(
         r=normed + [normed[0]], theta=cats,
         fill='toself', name='Your prediction',
-        fillcolor=f"{m_color}30", line=dict(color=m_color, width=2)))
+        fillcolor=hex_rgba(m_color, 0.18),
+        line=dict(color=m_color, width=2)))
     fig_radar.add_trace(go.Scatterpolar(
         r=normed_best + [normed_best[0]], theta=cats,
         fill='toself', name=f'Best exp.: {best_exp["sample"]} (η={best_exp["eta"]:.2f}V)',
-        fillcolor='rgba(45,206,137,0.08)', line=dict(color='#2DCE89', width=1.5, dash='dot')))
+        fillcolor='rgba(45,206,137,0.08)',
+        line=dict(color='#2DCE89', width=1.5, dash='dot')))
     fig_radar.add_trace(go.Scatterpolar(
         r=normed_closest + [normed_closest[0]], theta=cats,
         fill='toself', name=f'Nearest: {best_match["sample"]}',
-        fillcolor='rgba(255,255,255,0.03)', line=dict(color='#aaa', width=1, dash='dot')))
+        fillcolor='rgba(200,200,200,0.06)',
+        line=dict(color='#aaaaaa', width=1, dash='dot')))
     fig_radar.update_layout(
         polar=dict(radialaxis=dict(visible=True, range=[0, 1], tickfont=dict(size=9)),
                    angularaxis=dict(tickfont=dict(size=10))),
