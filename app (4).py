@@ -1310,25 +1310,25 @@ elif page == "📚 Theoretical Basis":
          "not basal plane area. Mo-terminated edges are the dominant active sites. "
          "This underpins why layer # (edge/basal ratio) and ECSA are key descriptors."),
 
-        ("6 · Geng et al. — Nature Commun. 2016 [METALLIC 1T PHASE]",
+        ("8 · Geng et al. — Nature Commun. 2016 [METALLIC 1T PHASE]",
          "Pure and stable metallic 1T-MoS₂: ρ=0.48 Ω·cm, Rct≈1 Ω, η=−175 mV. "
          "Mixed Mo⁰/MoS₂ domains in N10 and M3.0–M6.0 replicate conductivity benefits "
          "via metallic Mo pathways — providing parallel conductive channels without "
          "requiring full phase conversion."),
 
-        ("7 · Tsai et al. — Nature Commun. 2017 [S-VACANCY ENGINEERING]",
+        ("9 · Tsai et al. — Nature Commun. 2017 [S-VACANCY ENGINEERING]",
          "Electrochemical desulfurization generates S-vacancies at ≥−1.0 V vs RHE. "
          "Optimal concentration: 12.5–15.6% surface S-vacancies (ΔGH*≈0 eV). "
          "This is the theoretical optimum that MBE M2.0–M3.0 approaches by design. "
          "XANES shows Mo-S coordination number decreases monotonically with vacancy density."),
 
-        ("8 · Zhu et al. — Nature Commun. 2019 [GRAIN BOUNDARY ACTIVATION]",
+        ("10 · Zhu et al. — Nature Commun. 2019 [GRAIN BOUNDARY ACTIVATION]",
          "2H–1T grain boundaries are highly active HER sites: ΔGH*=−0.13 eV "
          "(cf. Pt: −0.18 eV). Tafel slope 73–75 mV/dec. Stable >200 h. "
          "More boundaries → better performance. Intermediate thickness in MBE "
          "creates optimal boundary density before grain coalescence."),
 
-        ("9 · Li et al. — Nature Materials 2016 [STRAINED S-VACANCIES]",
+        ("11 · Li et al. — Nature Materials 2016 [STRAINED S-VACANCIES]",
          "Combining S-vacancies with tensile strain (≈1% on Si substrate by MBE mismatch): "
          "VMoS3 defect → ΔGH*≈0 eV with strain. Without strain: ΔGH*>0.22 eV. "
          "MBE on Si introduces 1–2% tensile mismatch that activates vacancy sites. "
