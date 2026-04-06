@@ -918,7 +918,7 @@ elif page == "🗺 2D Heatmaps":
     cs = 'RdYlGn' if better_hm == 'max' else 'RdYlGn_r'
     fig_hm = go.Figure(data=go.Heatmap(
         z=Z, x=xgrid, y=ygrid, colorscale=cs,
-        colorbar=dict(title=f"{name_hm}<br>({unit_hm})", titleside='right'),
+        colorbar=dict(title=dict(text=f"{name_hm} ({unit_hm})", side='right')),
         hovertemplate=f'{xlabel}=%{{x:.2f}}<br>{ylabel}=%{{y:.2f}}'
                       f'<br>{name_hm}=%{{z:.3f}} {unit_hm}<extra></extra>'))
 
@@ -978,7 +978,7 @@ elif page == "🗺 2D Heatmaps":
             [1.0,   '#2DCE89'],
         ],
         zmin=0, zmax=4,
-        colorbar=dict(title='MBE score', tickvals=[0, 1, 2, 3, 4]),
+        colorbar=dict(title=dict(text='MBE score', side='right'), tickvals=[0, 1, 2, 3, 4]),
         hovertemplate='Layer#=%{x:.0f}<br>Mo/S=%{y:.2f}<br>Score=%{z:.0f}<extra></extra>'))
 
     for ser, scolor in SERIES_COLORS.items():
