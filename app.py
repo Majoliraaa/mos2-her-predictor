@@ -937,28 +937,51 @@ if page == "📊 Predictor":
         'tof_ecsa': (9,   6),
         'tof_mass': (5,   2),
     }
+    # Color map: green=good, orange=moderate, red=poor
+    def metric_color(key, v):
+        if key not in thresholds: return '#4E9AF1'
+        g, b = thresholds[key]
+        _, _, better = TARGETS[key]
+        if better == 'max':
+            if v >= g: return '#2DCE89'
+            if v <= b: return '#F5365C'
+            return '#F5A623'
+        else:
+            if v <= g: return '#2DCE89'
+            if v >= b: return '#F5365C'
+            return '#F5A623'
+
     for i, key in enumerate(metrics_order):
         name, unit, better = TARGETS[key]
         v = vals[key]
         col = cols[i % 4]
-        if key in thresholds:
-            g, b = thresholds[key]
-            if better == 'max':
-                color = "normal" if v >= g else ("off" if v <= b else "inverse")
-            else:
-                color = "normal" if v <= g else ("off" if v >= b else "inverse")
-        else:
-            color = "normal"
         fmt = f"{v:.2f}" if abs(v) < 100 else f"{v:.0f}"
+        color = metric_color(key, v)
         if gp_ci:
             std = gp_ci[key]['std']
             total_std = total_uncertainty_for_metric(key, v, std, dist_val)
-            shown_std = total_std
-            col.metric(name, f"{fmt} {unit}",
-                       delta=f"±{shown_std:.2f}" if abs(shown_std) < 100 else f"±{shown_std:.0f}",
-                       delta_color="off")
+            unc_str = f"±{total_std:.2f}" if abs(total_std) < 100 else f"±{total_std:.0f}"
+            col.markdown(
+                f"<div style='background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);"
+                f"border-left:3px solid {color};border-radius:6px;padding:12px 14px;margin-bottom:8px;'>"
+                f"<div style='font-family:IBM Plex Mono,monospace;font-size:0.72em;color:#888;"
+                f"text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;'>{name}</div>"
+                f"<div style='font-family:IBM Plex Mono,monospace;font-size:1.3em;font-weight:600;"
+                f"color:{color};'>{fmt} <span style='font-size:0.55em;color:#888;'>{unit}</span></div>"
+                f"<div style='font-family:IBM Plex Mono,monospace;font-size:0.78em;color:#666;"
+                f"margin-top:2px;'>{unc_str}</div>"
+                f"</div>", unsafe_allow_html=True)
         else:
-            col.metric(name, f"{fmt} {unit}")
+            col.markdown(
+                f"<div style='background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);"
+                f"border-left:3px solid {color};border-radius:6px;padding:12px 14px;margin-bottom:8px;'>"
+                f"<div style='font-family:IBM Plex Mono,monospace;font-size:0.72em;color:#888;"
+                f"text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;'>{name}</div>"
+                f"<div style='font-family:IBM Plex Mono,monospace;font-size:1.3em;font-weight:600;"
+                f"color:{color};'>{fmt} <span style='font-size:0.55em;color:#888;'>{unit}</span></div>"
+                f"<div style='font-family:IBM Plex Mono,monospace;font-size:0.78em;color:#555;"
+                f"margin-top:2px;'>experimental</div>"
+                f"</div>", unsafe_allow_html=True)
 
     eta_mV = eta_v_to_mV_abs(vals['eta'])
     vacancy_pct = vacancy_percent_from_mo_s(mo_s_ratio)
@@ -978,12 +1001,29 @@ if page == "📊 Predictor":
         tafel_total_std = literature_experimental_sd(eta_mV, 'tafel')
 
     st.markdown('<div class="section-header">BULLETPROOF INTERPRETATION</div>', unsafe_allow_html=True)
+
+    def small_metric(col, label, value, color='#4E9AF1'):
+        col.markdown(
+            f"<div style='background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);"
+            f"border-left:3px solid {color};border-radius:6px;padding:10px 12px;'>"
+            f"<div style='font-family:IBM Plex Mono,monospace;font-size:0.68em;color:#888;"
+            f"text-transform:uppercase;letter-spacing:0.08em;margin-bottom:3px;'>{label}</div>"
+            f"<div style='font-family:IBM Plex Mono,monospace;font-size:1.05em;font-weight:600;"
+            f"color:{color};word-break:break-word;'>{value}</div>"
+            f"</div>", unsafe_allow_html=True)
+
+    conf_color = {'HIGH': '#2DCE89', 'MEDIUM': '#F5A623', 'LOW': '#F5365C'}.get(confidence, '#4E9AF1')
+    vac_color = {'HIGH': '#2DCE89', 'MEDIUM': '#F5A623', 'LOW': '#4E9AF1', 'RISK': '#F5365C'}.get(vacancy_strength, '#4E9AF1')
+    lit_color = '#2DCE89' if lit_score >= 4 else ('#F5A623' if lit_score >= 2 else '#F5365C')
+
     b1, b2, b3, b4, b5 = st.columns(5)
-    b1.metric("Confidence", confidence)
-    b2.metric("η10 magnitude", f"{eta_mV:.0f} ± {eta_total_std_mV:.0f} mV")
-    b3.metric("Tafel", f"{vals['tafel']:.0f} ± {tafel_total_std:.0f}")
-    b4.metric("Vacancy est.", f"{vacancy_pct:.1f}%")
-    b5.metric("Lit. score", f"{lit_score}/5")
+    small_metric(b1, "Confidence", confidence, conf_color)
+    small_metric(b2, "η10 magnitude", f"{eta_mV:.0f} ± {eta_total_std_mV:.0f} mV",
+                 '#2DCE89' if eta_mV < 150 else ('#F5A623' if eta_mV < 250 else '#F5365C'))
+    small_metric(b3, "Tafel (mV/dec)", f"{vals['tafel']:.0f} ± {tafel_total_std:.0f}",
+                 '#2DCE89' if vals['tafel'] <= 80 else ('#F5A623' if vals['tafel'] <= 120 else '#F5365C'))
+    small_metric(b4, "Vacancy est.", f"{vacancy_pct:.1f}%", vac_color)
+    small_metric(b5, "Lit. score", f"{lit_score}/5", lit_color)
 
     st.markdown(f"""
 <div class='bulletproof-box'>
