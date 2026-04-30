@@ -399,26 +399,21 @@ def vacancy_percent_from_mo_s(mo_s_ratio):
     """
     Estimate S-vacancy fraction from Mo/S atomic ratio.
     FORMULA: vacancy% = (2.0 - S/Mo) / 2.0 × 100
-    BASIS: Stoichiometric MoS₂ has S/Mo = 2.0 (Mo/S = 0.500).
-    XPS VALIDATION (Ozaki et al., ChemPhysChem 2023):
-      - AP-XPS in-situ: S 2p/Mo 3d intensity ratio decreases above 600K in H₂
-      - S/Mo decrease directly proportional to vacancy formation
-      - Mo 3d₅/₂ shift: 229.4 eV (pristine) → 228.9 eV (vacancy) = −0.5 eV
-      - Mulliken charge: Mo atoms around vacancy become electron-rich
-      - This electron enrichment IS the mechanism that lowers ΔG_H* toward 0 eV
-    XPS CALIBRATION (Sherwood 2024 + ACS Cat 2023):
-      - S/Mo=2.2 (pristine 2H) → Mo/S=0.455 → vacancy%=0%
-      - S/Mo=1.70 (threshold) → Mo/S=0.588 → vacancy%≈15%
-      - S/Mo=1.45 (Mo-rich) → Mo/S=0.690 → vacancy%≈27.5%
-    OPTIMAL WINDOW: 12.5–15.6% vacancies → ΔG_H* ≈ 0 eV (literature consensus)
+    - Mo/S < 0.500 (S/Mo > 2.00): S-RICH — no vacancies, slight S excess
+    - Mo/S = 0.500 (S/Mo = 2.00): stoichiometric 2H-MoS₂ — 0% vacancies
+    - Mo/S > 0.500 (S/Mo < 2.00): S-DEFICIENT — vacancies present
+    OPTIMAL WINDOW: 12.5–15.6% vacancies → ΔG_H* ≈ 0 eV
+    XPS VALIDATION (Ozaki 2023): AP-XPS S/Mo decrease ∝ vacancy formation.
     """
     if mo_s_ratio <= 0:
         return np.nan
     s_mo = 1.0 / float(mo_s_ratio)
-    vacancy = max(0.0, (2.0 - s_mo) / 2.0 * 100.0)
+    vacancy = (2.0 - s_mo) / 2.0 * 100.0
+    if vacancy < 0:
+        return 0.0  # S-rich: no vacancies (slight S excess)
     return float(min(vacancy, 90.0))
 
-def vacancy_regime(vacancy_pct):
+def vacancy_regime(vacancy_pct, mo_s_ratio=0.5):
     """
     S-vacancy regime classifier with quantitative η and Tafel predictions.
     PUBLISHED BASIS — Vacancy% → η → Tafel correlation table:
@@ -438,7 +433,22 @@ def vacancy_regime(vacancy_pct):
     """
     if np.isnan(vacancy_pct):
         return "Unknown", "UNKNOWN", "Insufficient Mo/S information."
-    if vacancy_pct < 5:
+    if vacancy_pct == 0.0:
+        s_mo = 1.0 / mo_s_ratio if mo_s_ratio > 0 else 2.0
+        if s_mo > 2.0:
+            return (
+                "S-rich / near-stoichiometric 2H MoS₂",
+                "LOW",
+                f"Mo/S={mo_s_ratio:.3f} → S/Mo={s_mo:.2f} > 2.0: slight S excess. "
+                "No S-vacancies — pristine 2H basal plane is inert. "
+                "HER entirely edge-limited (Jaramillo 2007). η≈250–300+ mV expected."
+            )
+        return (
+            "Stoichiometric 2H MoS₂",
+            "LOW",
+            "Mo/S=0.500 → S/Mo=2.00: perfect stoichiometry. "
+            "No S-vacancies — basal plane inert. HER edge-limited. η≈250–300 mV expected."
+        )
         return (
             "Near-stoichiometric 2H MoS₂",
             "LOW",
@@ -1002,7 +1012,7 @@ if page == "📊 Predictor":
 
     eta_mV = eta_v_to_mV_abs(vals['eta'])
     vacancy_pct = vacancy_percent_from_mo_s(mo_s_ratio)
-    vacancy_label, vacancy_strength, vacancy_note = vacancy_regime(vacancy_pct)
+    vacancy_label, vacancy_strength, vacancy_note = vacancy_regime(vacancy_pct, mo_s_ratio)
     layer_factor = layer_activity_factor(layer_n)
     mechanism = tafel_mechanism(vals['tafel'])
     perf_class, perf_note = classify_performance_eta(eta_mV)
@@ -1891,7 +1901,7 @@ Total uncertainty = sqrt(GP uncertainty² + experimental SD² + extrapolation pe
     eta_now = eta_v_to_mV_abs(vals_now['eta'])
     vac_now = vacancy_percent_from_mo_s(mo_s_ratio)
     perf_now, perf_note_now = classify_performance_eta(eta_now)
-    vac_label_now, _, vac_note_now = vacancy_regime(vac_now)
+    vac_label_now, _, vac_note_now = vacancy_regime(vac_now, mo_s_ratio)
     rct_label_now, rct_note_now, rct_cons_now = expected_rct_interpretation(layer_n, mo_s_ratio, ecsa_val, vals_now['rct'])
     lit_score_now, lit_notes_now = literature_consistency_score(eta_now, vals_now['tafel'], vals_now['rct'], mo_s_ratio, ecsa_val)
 
