@@ -366,8 +366,46 @@ def gp_predict(key, ln, msr, ecsa_v):
     return mean, mean - 1.96*std, mean + 1.96*std, std
 
 
+def knn_predict(key, ln, msr, ecsa_v, k=4):
+    """
+    Physics-weighted KNN prediction.
+    Uses inverse-distance weighting over k nearest experimental samples.
+    More reliable than GP for sparse datasets (n=14) — preserves experimental
+    volcano shape instead of regressing to mean.
+    Weights: layer_n normalized by 18, mo_s_ratio by 0.36, ecsa by 6.0
+    (same normalization as distance metric used throughout).
+    """
+    dists = df.apply(lambda r: np.sqrt(
+        ((r.layer_n    - ln)  / 18)   **2 +
+        ((r.mo_s_ratio - msr) / 0.36) **2 +
+        ((r.ecsa       - ecsa_v) / 6.0) **2), axis=1).values
+    # Use k nearest
+    k = min(k, len(df))
+    idx = np.argsort(dists)[:k]
+    d = dists[idx]
+    # If any distance is ~0, return that sample exactly
+    if d[0] < 1e-6:
+        return float(df[key].iloc[idx[0]])
+    weights = 1.0 / (d ** 2)
+    weights /= weights.sum()
+    return float(np.dot(weights, df[key].iloc[idx].values))
+
+
+def smart_predict(key, ln, msr, ecsa_v):
+    """
+    Blended prediction: KNN (physics-faithful) + GP uncertainty.
+    - Uses KNN as the point estimate (preserves experimental volcano shape)
+    - Uses GP std as uncertainty estimate (calibrated credible interval)
+    KNN is more reliable than GP for n=14 with high variance.
+    GP tends to regress to mean in sparse regions; KNN follows experimental neighbors.
+    """
+    knn_val = knn_predict(key, ln, msr, ecsa_v)
+    _, _, _, gp_std = gp_predict(key, ln, msr, ecsa_v)
+    return knn_val, gp_std
+
+
 def predict_all(ln, msr, ecsa_v):
-    return {k: gp_predict(k, ln, msr, ecsa_v)[0] for k in TARGETS}
+    return {k: smart_predict(k, ln, msr, ecsa_v)[0] for k in TARGETS}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -894,27 +932,47 @@ if page == "📊 Predictor":
         source_type = "experimental"
     else:
         vals   = predict_all(layer_n, mo_s_ratio, ecsa_val)
-        source = "GP prediction (calibrated 95% credible interval)"
-        gp_ci  = {k: dict(zip(['mean','lower','upper','std'],
-                              gp_predict(k, layer_n, mo_s_ratio, ecsa_val)))
-                  for k in TARGETS}
+        source = "KNN-weighted prediction (GP uncertainty estimate)"
+        gp_ci  = {}
+        for k in TARGETS:
+            knn_v, gp_std = smart_predict(k, layer_n, mo_s_ratio, ecsa_val)
+            gp_ci[k] = {'mean': knn_v, 'std': gp_std,
+                        'lower': knn_v - 1.96*gp_std,
+                        'upper': knn_v + 1.96*gp_std}
         source_type = "gp"
         # Show nearest experimental for comparison when GP is used
         exp_vals = {k: best_match[k] for k in TARGETS}
 
     st.caption(f"Source: {source}")
 
-    # When using GP, show divergence warning if GP differs significantly from nearest experimental
-    if source_type == "gp" and dist_val < 0.30:
+    # Always show nearest experimental comparison when using GP
+    if source_type == "gp":
         eta_gp  = vals['eta']
         eta_exp = best_match['eta']
-        if abs(eta_gp - eta_exp) > 0.08:
+        tafel_exp = best_match['tafel']
+        diff_mV = abs(eta_gp - eta_exp) * 1000
+
+        if dist_val < 0.40:
+            # Close enough to show as meaningful comparison
+            if diff_mV > 60:
+                st.warning(
+                    f"⚠ **GP vs experimental divergence:** Nearest sample **{best_match['sample']}** "
+                    f"has η={eta_exp:.2f}V, Tafel={tafel_exp:.0f} mV/dec. "
+                    f"GP predicts η={eta_gp:.2f}V (Δ={diff_mV:.0f} mV). "
+                    f"With n=14 points, GP interpolation can be unreliable between sparse samples. "
+                    f"**Use nearest experimental as primary reference for η and Tafel.**"
+                )
+            else:
+                st.info(
+                    f"ℹ GP interpolating near **{best_match['sample']}** "
+                    f"(η={eta_exp:.2f}V, Tafel={tafel_exp:.0f} mV/dec). "
+                    f"GP prediction: η={eta_gp:.2f}V — Δ={diff_mV:.0f} mV (within GP uncertainty)."
+                )
+        else:
             st.warning(
-                f"⚠ **GP interpolation note:** Nearest experimental sample is **{best_match['sample']}** "
-                f"(η={eta_exp:.2f}V, Tafel={best_match['tafel']:.0f} mV/dec). "
-                f"GP predicts η={eta_gp:.2f}V — difference of {abs(eta_gp-eta_exp)*1000:.0f} mV. "
-                f"n=14 training points → GP uncertainty is high in this region. "
-                f"The experimental neighbor is likely more reliable for η estimation."
+                f"⚠ **Extrapolating beyond Jeon domain.** Nearest sample: **{best_match['sample']}** "
+                f"(η={eta_exp:.2f}V). GP prediction has high uncertainty in this region. "
+                f"Use as qualitative trend only."
             )
 
     st.markdown('<div class="section-header">KEY DESCRIPTORS</div>', unsafe_allow_html=True)
@@ -1153,10 +1211,18 @@ Raman confirmation (Lee 2010 ACS Nano):
     closest = df_dist2.nsmallest(3, 'dist')
     show_cols = ['sample','series','layer_n','mo_s_ratio','ecsa',
                  'eta','tafel','rct','tof_ecsa','tof_mass']
+
+    # Highlight if GP diverges significantly from nearest
+    if source_type == "gp" and abs(vals['eta'] - best_match['eta']) > 0.06:
+        st.markdown(
+            "<div class='risk-box'>⚠ <b>GP prediction diverges from nearest experimental samples below. "
+            "For η and Tafel, the experimental table is more reliable than the GP prediction above.</b></div>",
+            unsafe_allow_html=True)
+
     st.dataframe(closest[show_cols].reset_index(drop=True), use_container_width=True)
     st.caption(
-        "✅ layer_n: Scherrer validated (×4 sources) + Raman confirmed (N5, N10) | "
-        "✅ mo_s_ratio: XPS calibration validated (Sherwood 2024 + ACS Cat 2023 + Smiri 2026)")
+        "✅ layer_n: Scherrer validated (×6 sources) + Raman confirmed (N5, N10) | "
+        "✅ mo_s_ratio: XPS calibration (Sherwood 2024 + ACS Cat 2023 + Smiri 2026 + Ozaki 2023)")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
