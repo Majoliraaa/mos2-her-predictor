@@ -487,6 +487,7 @@ def vacancy_regime(vacancy_pct, mo_s_ratio=0.5):
             "Mo/S=0.500 → S/Mo=2.00: perfect stoichiometry. "
             "No S-vacancies — basal plane inert. HER edge-limited. η≈250–300 mV expected."
         )
+    if vacancy_pct < 5:
         return (
             "Near-stoichiometric 2H MoS₂",
             "LOW",
@@ -586,17 +587,26 @@ def distance_penalty(dist_val, target='eta'):
     return 35.0 if target == 'eta' else 12.0
 
 def total_uncertainty_for_metric(key, mean_value, gp_std, dist_val):
+    """
+    Combined uncertainty: KNN prediction residual + literature experimental SD + extrapolation penalty.
+    KNN residual is estimated from the LOO MAE of the GP (proxy for prediction error at that distance).
+    This is more honest than using raw GP std, which can be poorly calibrated for n=14.
+    """
+    # Base model uncertainty: use GP MAE from LOO as proxy for KNN prediction error
+    model_mae = gp_scores[key]['mae']
+
     if key == 'eta':
         eta_mV = eta_v_to_mV_abs(mean_value)
-        gp_mV = abs(gp_std) * 1000.0
+        model_unc_mV = abs(model_mae) * 1000.0
         exp_sd = literature_experimental_sd(eta_mV, target='eta')
         pen = distance_penalty(dist_val, target='eta')
-        return np.sqrt(gp_mV**2 + exp_sd**2 + pen**2) / 1000.0
+        total_mV = np.sqrt(model_unc_mV**2 + exp_sd**2 + pen**2)
+        return total_mV / 1000.0
     if key == 'tafel':
-        eta_ref = eta_v_to_mV_abs(vals['eta']) if 'vals' in globals() else 200
+        eta_ref = 200  # conservative
         exp_sd = literature_experimental_sd(eta_ref, target='tafel')
         pen = distance_penalty(dist_val, target='tafel')
-        return np.sqrt(float(gp_std)**2 + exp_sd**2 + pen**2)
+        return np.sqrt(float(model_mae)**2 + exp_sd**2 + pen**2)
     return float(gp_std)
 
 def confidence_level(layer_n, mo_s_ratio, ecsa_v, dist_val):
