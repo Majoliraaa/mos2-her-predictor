@@ -994,16 +994,28 @@ if page == "📊 Predictor":
                   "low": "🔵 Raman saturated — Scherrer primary (validated ×4 sources)",
                   "very_low": "🔵 Bulk regime — Scherrer primary (validated ×4 sources)"}.get(raman_conf, "🔵")
 
+    def _mos_status(msr):
+        """Mo/S status label based on vacancy% — physically correct classification."""
+        vac = vacancy_percent_from_mo_s(msr)
+        if msr < 0.500:
+            return "🔵 S-rich / near-stoich. (pure 2H) — no vacancies"
+        if vac < 5:
+            return f"🔵 Near-stoich. ({vac:.1f}% vac) — edge-limited HER"
+        if vac < 12.5:
+            return f"🟡 Point-defect zone ({vac:.1f}% vac) — basal activating"
+        if vac <= 22:
+            return f"🟢 Optimal zone ({vac:.1f}% vac) — S-vacancies in 2H, ΔG_H*≈0"
+        return f"🔴 Severe deficiency ({vac:.1f}% vac) — structural risk"
+
     desc_cards = [
         (kc1, "Layer # ✅", f"{layer_n}", "layers",
          "🟢 ≤3L → k⁰ ≥ 1.5 cm/s (MBE required)" if layer_n <= 3
          else ("🟢 4–6L → k⁰ 0.1–7.5 cm/s (optimal HER zone)" if layer_n <= 6
                else "🔵 Multi-layer → k⁰ < 0.1 cm/s"),
-         f"✅ Scherrer validated (×4 sources) | {raman_flag}"),
+         f"✅ Scherrer validated (×6 sources) | {raman_flag}"),
         (kc2, "Mo/S ratio ✅", f"{mo_s_ratio:.2f}", "",
-         "🟢 Optimal zone (S-vacancies in 2H)" if 0.556 <= mo_s_ratio <= 0.690
-         else ("🔵 Near-stoich. (pure 2H)" if mo_s_ratio < 0.500 else "🟡 Extreme vacancies"),
-         "✅ XPS calibration validated (Sherwood 2024 + ACS Cat 2023 + Smiri 2026)"),
+         _mos_status(mo_s_ratio),
+         "✅ XPS calibration validated (Sherwood 2024 + ACS Cat 2023 + Smiri 2026 + Ozaki 2023)"),
         (kc3, "ECSA ✅", f"{ecsa_val:.1f}", "cm²",
          "🟢 High — max edge sites" if ecsa_val >= 7.0 else "🔵 Moderate",
          "✅ Measured — Jeon 2026 Table 1"),
