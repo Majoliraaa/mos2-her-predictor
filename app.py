@@ -501,14 +501,14 @@ def vacancy_regime(vacancy_pct, mo_s_ratio=0.5):
             f"Vacancy≈{vacancy_pct:.1f}% (5–12.5%): η≈150–200 mV, Tafel≈60–80 mV/dec. "
             "Basal plane progressively activating. ΔG_H* improving toward 0 eV (Ozaki 2023)."
         )
-    if vacancy_pct <= 22:
+    if vacancy_pct <= 25:
         return (
             "Optimal vacancy / Mo subcoordinated regime",
             "HIGH",
-            f"Vacancy≈{vacancy_pct:.1f}% (12.5–22%): η≈80–120 mV, Tafel≈40–50 mV/dec. "
+            f"Vacancy≈{vacancy_pct:.1f}% (12.5–25%): η≈80–120 mV, Tafel≈40–50 mV/dec. "
             "ΔG_H* ≈ 0 eV — optimal thermodynamic window. "
             "Transient 2H→1T' during HER possible (Zhai EES 2023). "
-            "MoS-N10 (Mo/S=0.556, ~13% vac) is the Jeon optimum: η=−0.33V, Tafel=80 mV/dec."
+            "Jeon optima: N10 (13% vac, η=−0.33V, Tafel=80) and M3.0 (24% vac, η=−0.35V, Tafel=114)."
         )
     return (
         "Severe S-deficiency / structural-risk regime",
@@ -1003,7 +1003,7 @@ if page == "📊 Predictor":
             return f"🔵 Near-stoich. ({vac:.1f}% vac) — edge-limited HER"
         if vac < 12.5:
             return f"🟡 Point-defect zone ({vac:.1f}% vac) — basal activating"
-        if vac <= 22:
+        if vac <= 25:
             return f"🟢 Optimal zone ({vac:.1f}% vac) — S-vacancies in 2H, ΔG_H*≈0"
         return f"🔴 Severe deficiency ({vac:.1f}% vac) — structural risk"
 
