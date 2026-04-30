@@ -877,18 +877,35 @@ if page == "📊 Predictor":
         f"ECSA {ecsa_val:.1f} cm² (measured)</div>"
         f"</div>", unsafe_allow_html=True)
 
-    if dist_val < 0.05:
+    if dist_val < 0.08:
         vals   = {k: best_match[k] for k in TARGETS}
         source = f"Experimental data — {best_match['sample']} (Jeon 2026 Table 1)"
         gp_ci  = None
+        source_type = "experimental"
     else:
         vals   = predict_all(layer_n, mo_s_ratio, ecsa_val)
         source = "GP prediction (calibrated 95% credible interval)"
         gp_ci  = {k: dict(zip(['mean','lower','upper','std'],
                               gp_predict(k, layer_n, mo_s_ratio, ecsa_val)))
                   for k in TARGETS}
+        source_type = "gp"
+        # Show nearest experimental for comparison when GP is used
+        exp_vals = {k: best_match[k] for k in TARGETS}
 
     st.caption(f"Source: {source}")
+
+    # When using GP, show divergence warning if GP differs significantly from nearest experimental
+    if source_type == "gp" and dist_val < 0.30:
+        eta_gp  = vals['eta']
+        eta_exp = best_match['eta']
+        if abs(eta_gp - eta_exp) > 0.08:
+            st.warning(
+                f"⚠ **GP interpolation note:** Nearest experimental sample is **{best_match['sample']}** "
+                f"(η={eta_exp:.2f}V, Tafel={best_match['tafel']:.0f} mV/dec). "
+                f"GP predicts η={eta_gp:.2f}V — difference of {abs(eta_gp-eta_exp)*1000:.0f} mV. "
+                f"n=14 training points → GP uncertainty is high in this region. "
+                f"The experimental neighbor is likely more reliable for η estimation."
+            )
 
     st.markdown('<div class="section-header">KEY DESCRIPTORS</div>', unsafe_allow_html=True)
     kc1, kc2, kc3 = st.columns(3)
