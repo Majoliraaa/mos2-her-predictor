@@ -942,7 +942,7 @@ elif page=="🔬 XPS Calibration":
     fig_k0.add_trace(go.Scatter(x=layers_plot,y=k0_plot,mode='lines+markers',line=dict(color='#2DCE89',width=2),marker=dict(size=10,color=['#FF6B6B' if k in [1,3] else '#2DCE89' for k in layers_plot]),name='k⁰ (cm/s)'))
     fig_k0.add_hrect(y0=1.5,y1=300,fillcolor="rgba(45,206,137,0.08)",line_width=0,annotation_text="MBE required (3/3 pts)")
     fig_k0.add_hrect(y0=0.1,y1=1.5,fillcolor="rgba(245,166,35,0.08)",line_width=0,annotation_text="MBE preferred (2/3 pts)")
-    fig_k0.update_layout(title="Standard rate constant k⁰ vs MoS₂ layer number",xaxis_title="Number of trilayers",yaxis_title="k⁰ (cm/s)",yaxis_type="log",height=380,plot_bgcolor='rgba(0,0,0,0)',paper_bgcolor='rgba(0,0,0,0)')
+    fig_k0.update_layout(title="Standard rate constant k⁰ vs MoS₂ layer number",xaxis_title="Number of trilayers",yaxis_title="k⁰ (cm/s)",yaxis_type="log",yaxis_range=[-4,3],height=380,plot_bgcolor='rgba(0,0,0,0)',paper_bgcolor='rgba(0,0,0,0)')
     fig_k0.update_xaxes(showgrid=True,gridcolor='rgba(128,128,128,0.12)')
     fig_k0.update_yaxes(showgrid=True,gridcolor='rgba(128,128,128,0.12)')
     st.plotly_chart(fig_k0,use_container_width=True)
