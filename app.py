@@ -697,6 +697,13 @@ elif page=="📈 Trend Curves":
         y_knn.append(knn_val); y_lows.append(lo_); y_highs.append(hi_)
     y_knn=np.array(y_knn); y_lows=np.array(y_lows); y_highs=np.array(y_highs)
 
+    # FIX v4.4.3a: Clamp GP CI band to physical minimum
+    # Tafel, Rct, Resistivity, TOF values cannot be negative
+    NON_NEGATIVE_TARGETS = {'tafel','rct','resistivity','tof_ecsa','tof_mass','raman'}
+    if target_tc in NON_NEGATIVE_TARGETS:
+        y_lows = np.maximum(y_lows, 0.0)
+        y_highs = np.maximum(y_highs, 0.0)
+
     exp_lo=df[feat_tc].min(); exp_hi=df[feat_tc].max()
     in_range=(x_range>=exp_lo)&(x_range<=exp_hi)
 
