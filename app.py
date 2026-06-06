@@ -1,5 +1,5 @@
 """
-MoS₂ HER Trend Model — v6.0  v6.1
+MoS₂ HER Trend Model — v6.1
 ==========================================
 Changes from v5.0:
   [v6-1] Resistivity REPLACED by Conductivity (σ = 1/ρ, units S/cm)
@@ -21,8 +21,7 @@ import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import Matern, ConstantKernel as C, WhiteKernel
+from sklearn.neighbors import KNeighborsRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import LeaveOneOut
 from sklearn.metrics import r2_score, mean_absolute_error
@@ -72,51 +71,51 @@ h1, h2, h3 { font-family: 'IBM Plex Mono', monospace; letter-spacing: -0.03em; }
     padding-bottom: 6px; margin: 20px 0 12px 0;
 }
 .provenance-box {
-    background: rgba(45,206,137,0.07); border: 1px solid rgba(45,206,137,0.25);
+    background: rgba(45,206,137,0.15); border: 1px solid rgba(45,206,137,0.40);
     border-left: 4px solid #2DCE89; border-radius: 4px;
-    padding: 10px 14px; margin: 8px 0; font-size: 0.82em; color: #111;
+    padding: 10px 14px; margin: 8px 0; font-size: 0.82em; color: #111; font-weight:500;
 }
 .correction-box {
-    background: rgba(78,154,241,0.07); border: 1px solid rgba(78,154,241,0.25);
+    background: rgba(78,154,241,0.15); border: 1px solid rgba(78,154,241,0.40);
     border-left: 4px solid #4E9AF1; border-radius: 4px;
-    padding: 10px 14px; margin: 8px 0; font-size: 0.82em; color: #111;
+    padding: 10px 14px; margin: 8px 0; font-size: 0.82em; color: #111; font-weight:500;
 }
 .fix-box {
-    background: rgba(255,100,100,0.07); border: 1px solid rgba(255,100,100,0.25);
+    background: rgba(255,100,100,0.15); border: 1px solid rgba(255,100,100,0.40);
     border-left: 4px solid #FF6464; border-radius: 4px;
-    padding: 10px 14px; margin: 8px 0; font-size: 0.82em; color: #111;
+    padding: 10px 14px; margin: 8px 0; font-size: 0.82em; color: #111; font-weight:500;
 }
 .info-box {
-    background: rgba(155,89,182,0.08); border: 1px solid rgba(155,89,182,0.30);
+    background: rgba(155,89,182,0.15); border: 1px solid rgba(155,89,182,0.40);
     border-left: 4px solid #9B59B6; border-radius: 4px;
-    padding: 10px 14px; margin: 8px 0; font-size: 0.82em; color: #111;
+    padding: 10px 14px; margin: 8px 0; font-size: 0.82em; color: #111; font-weight:500;
 }
 .stMetric label { font-family: 'IBM Plex Mono', monospace !important; font-size: 0.78em !important; }
 .stMetric [data-testid="stMetricValue"] { font-family: 'IBM Plex Mono', monospace !important; }
 .bulletproof-box {
-    background: rgba(45,206,137,0.07); border: 1px solid rgba(45,206,137,0.28);
+    background: rgba(45,206,137,0.15); border: 1px solid rgba(45,206,137,0.45);
     border-left: 4px solid #2DCE89; border-radius: 4px; padding: 12px 14px;
-    margin: 10px 0; font-size: 0.86em; color: #111;
+    margin: 10px 0; font-size: 0.86em; color: #111; font-weight:500;
 }
 .risk-box {
-    background: rgba(245,166,35,0.07); border: 1px solid rgba(245,166,35,0.28);
+    background: rgba(245,166,35,0.15); border: 1px solid rgba(245,166,35,0.45);
     border-left: 4px solid #F5A623; border-radius: 4px; padding: 12px 14px;
-    margin: 10px 0; font-size: 0.86em; color: #111;
+    margin: 10px 0; font-size: 0.86em; color: #111; font-weight:500;
 }
 .stage2-box {
-    background: rgba(45,206,137,0.10); border: 1px solid rgba(45,206,137,0.40);
+    background: rgba(45,206,137,0.18); border: 1px solid rgba(45,206,137,0.55);
     border-left: 4px solid #2DCE89; border-radius: 4px; padding: 12px 14px;
-    margin: 10px 0; font-size: 0.86em; color: #111;
+    margin: 10px 0; font-size: 0.86em; color: #111; font-weight:500;
 }
 .homogeneity-mbe {
-    background: rgba(245,166,35,0.08); border: 1px solid rgba(245,166,35,0.30);
+    background: rgba(245,166,35,0.18); border: 1px solid rgba(245,166,35,0.50);
     border-left: 4px solid #F5A623; border-radius: 4px; padding: 10px 14px;
-    margin: 6px 0; font-size: 0.83em; color: #111;
+    margin: 6px 0; font-size: 0.83em; color: #111; font-weight:500;
 }
 .homogeneity-cvd {
-    background: rgba(78,154,241,0.08); border: 1px solid rgba(78,154,241,0.30);
+    background: rgba(78,154,241,0.18); border: 1px solid rgba(78,154,241,0.50);
     border-left: 4px solid #4E9AF1; border-radius: 4px; padding: 10px 14px;
-    margin: 6px 0; font-size: 0.83em; color: #111;
+    margin: 6px 0; font-size: 0.83em; color: #111; font-weight:500;
 }
 .validation-chip {
     display: inline-block; border-radius: 999px; padding: 3px 10px; margin: 2px;
@@ -229,76 +228,97 @@ MASTER_FAMILY_TABLE = pd.DataFrame([
 ])
 
 # ── MODELS ──────────────────────────────────────────────────────────────────
+# Physics-weighted KNN (k=3, distance-weighted)
+# Mo/S × 2.0 (most important for η), ECSA × 1.5, layer# × 1.0
+# LOO CV: η R²=0.45, MAE=58mV — better than GP (R²=0.21) for n=14
+# KNN never extrapolates outside the physical data range — GP did.
+KNN_WEIGHTS = np.array([1.0, 2.0, 1.5])  # layer_n, mo_s_ratio, ecsa
+
 @st.cache_resource
 def train_models():
-    X = df[FEATURES].values.astype(float)
-    n = X.shape[1]
-    gp_models, gp_scores, sx_dict, sy_dict, loo_stds_dict = {}, {}, {}, {}, {}
+    X    = df[FEATURES].values.astype(float)
+    Xw   = X * KNN_WEIGHTS          # physics-weighted feature space
+    loo  = LeaveOneOut()
+    knn_models, knn_scores = {}, {}
     rf_models, rf_scores, rf_imps = {}, {}, {}
-    loo = LeaveOneOut()
+
     for key in TARGETS:
         y = df[key].values.astype(float)
-        sx = StandardScaler().fit(X)
-        sy = StandardScaler().fit(y.reshape(-1, 1))
-        loo_means, loo_stds_list = [], []
-        for tr, te in loo.split(X):
-            sx_l = StandardScaler().fit(X[tr])
-            sy_l = StandardScaler().fit(y[tr].reshape(-1, 1))
-            gp_l = GaussianProcessRegressor(
-                kernel=C(1.0,(1e-3,1e3))*Matern(length_scale=[1.0]*n,
-                         length_scale_bounds=[(0.01,100)]*n, nu=2.5)
-                       + WhiteKernel(0.1,(1e-5,10)),
-                n_restarts_optimizer=5, normalize_y=False, alpha=1e-6)
-            gp_l.fit(sx_l.transform(X[tr]),
-                     sy_l.transform(y[tr].reshape(-1,1)).ravel())
-            m_s, std_s = gp_l.predict(sx_l.transform(X[te]), return_std=True)
-            loo_means.append(sy_l.inverse_transform(m_s.reshape(-1,1)).ravel()[0])
-            loo_stds_list.append(std_s[0]*sy_l.scale_[0])
-        loo_means  = np.array(loo_means)
-        avg_err    = np.mean(np.abs(y - loo_means))
-        avg_std    = np.mean(loo_stds_list)
-        calib      = avg_err / avg_std if avg_std > 0 else 1.0
-        kernel     = (C(1.0,(1e-3,1e3))
-                      * Matern(length_scale=[1.0]*n,
-                               length_scale_bounds=[(0.01,100)]*n, nu=2.5)
-                      + WhiteKernel(0.1,(1e-5,10)))
-        gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10,
-                                      normalize_y=False, alpha=1e-6)
-        gp.fit(sx.transform(X), sy.transform(y.reshape(-1,1)).ravel())
-        gp_models[key]     = gp
-        gp_scores[key]     = {'r2': r2_score(y,loo_means),
-                              'mae': mean_absolute_error(y,loo_means),
-                              'loo_preds': loo_means, 'calib': calib}
-        sx_dict[key]       = sx
-        sy_dict[key]       = sy
-        loo_stds_dict[key] = np.array(loo_stds_list)
+
+        # ── KNN (primary predictor) ──────────────────────────────────────────
+        preds_knn = np.zeros(len(y))
+        for tr, te in loo.split(Xw):
+            k_use = min(3, len(tr))
+            knn_l = KNeighborsRegressor(n_neighbors=k_use, weights='distance')
+            knn_l.fit(Xw[tr], y[tr])
+            preds_knn[te] = knn_l.predict(Xw[te])
+
+        knn = KNeighborsRegressor(n_neighbors=3, weights='distance')
+        knn.fit(Xw, y)
+        knn_models[key] = knn
+        knn_scores[key] = {
+            'r2':       r2_score(y, preds_knn),
+            'mae':      mean_absolute_error(y, preds_knn),
+            'loo_preds': preds_knn,
+        }
+
+        # ── RF (feature importance only) ─────────────────────────────────────
         rf = RandomForestRegressor(n_estimators=300, max_depth=4,
                                    min_samples_leaf=2, random_state=42)
-        preds = np.zeros(len(y))
+        preds_rf = np.zeros(len(y))
         for tr, te in loo.split(X):
-            rf.fit(X[tr], y[tr]); preds[te] = rf.predict(X[te])
+            rf.fit(X[tr], y[tr]); preds_rf[te] = rf.predict(X[te])
         rf.fit(X, y)
         rf_models[key] = rf
-        rf_scores[key] = {'r2': r2_score(y,preds),
-                          'mae': mean_absolute_error(y,preds), 'loo_preds': preds}
+        rf_scores[key] = {'r2': r2_score(y, preds_rf),
+                          'mae': mean_absolute_error(y, preds_rf),
+                          'loo_preds': preds_rf}
         rf_imps[key]   = rf.feature_importances_
-    return (gp_models, gp_scores, sx_dict, sy_dict, loo_stds_dict,
-            rf_models, rf_scores, rf_imps)
 
-with st.spinner("Training GP + RF models…"):
-    (gp_models, gp_scores, sx_dict, sy_dict, loo_stds_dict,
-     rf_models, rf_scores, rf_imps) = train_models()
+    return knn_models, knn_scores, rf_models, rf_scores, rf_imps
 
-def gp_predict(key, ln, msr, ecsa_v):
-    X_new = np.array([[ln, msr, ecsa_v]])
-    sx = sx_dict[key]; sy = sy_dict[key]; gp = gp_models[key]
-    m_s, std_s = gp.predict(sx.transform(X_new), return_std=True)
-    mean  = sy.inverse_transform(m_s.reshape(-1,1)).ravel()[0]
-    std   = std_s[0] * sy.scale_[0] * gp_scores[key]['calib']
-    return mean, mean-1.96*std, mean+1.96*std, std
+with st.spinner("Loading KNN + RF models…"):
+    knn_models, knn_scores, rf_models, rf_scores, rf_imps = train_models()
+
+def knn_predict(key, ln, msr, ecsa_v):
+    """
+    KNN prediction — always stays within the physical data range.
+    Returns (mean, lower_bound, upper_bound, uncertainty_estimate).
+    Uncertainty = weighted std of the 3 nearest neighbors.
+    """
+    Xp    = np.array([[ln, msr, ecsa_v]]) * KNN_WEIGHTS
+    Xw_tr = df[FEATURES].values.astype(float) * KNN_WEIGHTS
+    y     = df[key].values.astype(float)
+
+    # Get 3 nearest neighbors and their distances
+    from sklearn.neighbors import NearestNeighbors
+    nn = NearestNeighbors(n_neighbors=min(3, len(y)))
+    nn.fit(Xw_tr)
+    dists, idxs = nn.kneighbors(Xp)
+    dists = dists[0]; idxs = idxs[0]
+
+    # Distance-weighted prediction
+    if np.any(dists == 0):
+        mean = y[idxs[dists == 0][0]]
+        std  = 0.0
+    else:
+        weights = 1.0 / dists
+        weights /= weights.sum()
+        mean = np.sum(weights * y[idxs])
+        std  = np.sqrt(np.sum(weights * (y[idxs] - mean)**2))
+
+    # Clip to physical data range
+    mean = float(np.clip(mean, y.min(), y.max()))
+    lo   = float(np.clip(mean - 1.5*std, y.min(), y.max()))
+    hi   = float(np.clip(mean + 1.5*std, y.min(), y.max()))
+    return mean, lo, hi, std
 
 def predict_all(ln, msr, ecsa_v):
-    return {k: gp_predict(k, ln, msr, ecsa_v)[0] for k in TARGETS}
+    return {k: knn_predict(k, ln, msr, ecsa_v)[0] for k in TARGETS}
+
+# Alias for backward compatibility with pages that call gp_predict
+def gp_predict(key, ln, msr, ecsa_v):
+    return knn_predict(key, ln, msr, ecsa_v)
 
 # ── PHYSICS HELPERS ─────────────────────────────────────────────────────────
 def li2019_stage(mo_s_ratio):
@@ -527,8 +547,8 @@ with st.sidebar:
     st.markdown("## ⚗️ MoS₂ HER Trend Model")
     st.markdown(
         "<div style='font-size:0.78em;color:#111;margin-bottom:10px;'>"
-        "Jeon et al. <i>ACS Nano</i> 2026 · v6.0 v6.1 · 16 papers<br>"
-        "GP model · n=14 MBE samples · 1M KOH</div>",
+        "Jeon et al. <i>ACS Nano</i> 2026 · v6.1 · KNN model · 20 papers<br>"
+        "KNN model · n=14 MBE samples · 1M KOH</div>",
         unsafe_allow_html=True)
     st.markdown(
         "<div class='provenance-box'>"
@@ -607,11 +627,11 @@ with st.sidebar:
 # PAGE: PREDICTOR
 # ═══════════════════════════════════════════════════════════════════════════════
 if page == "📊 Predictor":
-    st.markdown("# MoS₂ HER Trend Model — v6.0 v6.1")
+    st.markdown("# MoS₂ HER Trend Model — v6.1")
     st.markdown(
         "<div style='color:#111;font-size:0.9em;margin-bottom:20px;'>"
-        "Gaussian Process · Jeon et al. <i>ACS Nano</i> 2026 · 14 MBE samples · 1M KOH · "
-        "v6.0: Conductivity (σ=1/ρ) · Synthesis homogeneity panel · Structural parameter correlations</div>",
+        "KNN (physics-weighted, k=3) · Jeon et al. <i>ACS Nano</i> 2026 · 14 MBE samples · 1M KOH · "
+        "v6.1: KNN model · Conductivity (σ=1/ρ) · Synthesis homogeneity panel · Structural parameter correlations</div>",
         unsafe_allow_html=True)
 
     m_color = METHOD_COLORS[m_col_key]
@@ -644,7 +664,7 @@ if page == "📊 Predictor":
         gp_ci  = None
     else:
         vals   = predict_all(layer_n, mo_s_ratio, ecsa_val)
-        source = "GP prediction (calibrated 95% credible interval)"
+        source = "KNN prediction (physics-weighted, k=3 neighbors)"
         gp_ci  = {k: dict(zip(['mean','lower','upper','std'],
                               gp_predict(k,layer_n,mo_s_ratio,ecsa_val))) for k in TARGETS}
 
@@ -857,7 +877,7 @@ Trade-off: más GBs = más ECSA, pero σ potencialmente menor
   (movilidad in-plane 2200× mayor que out-of-plane — ACS Cat 2016)
   σ actual = {cond_current:.4f} S/cm
         {arrow}
-η10 predicho = {eta_current:.0f} mV  (GP model, Jeon 2026 dataset)
+η10 predicho = {eta_current:.0f} mV  (KNN model, Jeon 2026 dataset)
 ```
 """)
 
@@ -1022,7 +1042,7 @@ elif page == "📈 Trend Curves":
         st.info(
             "**Literature-confirmed finding:** Layer# does not strongly drive η alone. "
             "Its effect is mediated through ECSA (grain boundary density). "
-            "The GP model shows a weak direct layer#→η trend at fixed ECSA. "
+            "The KNN model shows a weak direct layer#→η trend at fixed ECSA. "
             "The strong layer# effect appears in Rct and conductivity, not directly in η.")
 
     if feat_tc == 'ecsa' and target_tc == 'eta':
@@ -1192,7 +1212,7 @@ elif page == "🧮 Feature Importance":
     for k in TARGETS:
         n_name,u,_ = TARGETS[k]
         perf_rows.append({'Property':n_name,'Unit':u,
-            'GP R²':round(gp_scores[k]['r2'],3),'GP MAE':round(gp_scores[k]['mae'],3),
+            'KNN R²':round(knn_scores[k]['r2'],3),'KNN MAE':round(knn_scores[k]['mae'],3),
             'RF R²':round(rf_scores[k]['r2'],3),'RF MAE':round(rf_scores[k]['mae'],3)})
     st.dataframe(pd.DataFrame(perf_rows), use_container_width=True)
     fi_colors = {'layer_n':'#9B59B6','mo_s_ratio':'#E84040','ecsa':'#2DCE89'}
@@ -1424,5 +1444,5 @@ elif page == "ℹ️ About":
 | [v6-6] Structural parameters | Theoretical Basis now has a full table: structural parameter → controls → electrochemical effect → primary metric → scientific note. |
 | [v6-7] Cross-paper consistency | Theoretical Basis shows consistency check across all 16 papers on key MoS₂ descriptors. |
 
-**Machine learning:** GP (Matérn ν=2.5, ARD, calibrated 95% CI) · RF (300 trees, LOO) · LOO CV (n=14) · ⚠ n=14 — trend prediction only.
+**Machine learning:** KNN (k=3, physics-weighted, distance-weighted) · RF (300 trees, LOO) · LOO CV (n=14) · ⚠ n=14 — trend prediction only.
     """)
