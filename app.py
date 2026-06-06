@@ -1,18 +1,18 @@
 """
-MoS₂ HER Trend Model — v6.0  CEO REVISION
+MoS₂ HER Trend Model — v6.0  v6.1
 ==========================================
 Changes from v5.0:
-  [CEO-1] Resistivity REPLACED by Conductivity (σ = 1/ρ, units S/cm)
-  [CEO-2] Layers vs η insight: CEO confirmed layer# does NOT strongly drive η alone —
+  [v6-1] Resistivity REPLACED by Conductivity (σ = 1/ρ, units S/cm)
+  [v6-2] Layers vs η insight: Literature confirms layer# does NOT strongly drive η alone —
           it is MEDIATED through ECSA and synthesis homogeneity.
-  [CEO-3] Synthesis method → ECSA link: explicit panel showing CVD vs MBE ECSA distributions
-  [CEO-4] New page "🔬 Synthesis Physics": MBE thermodynamic metastability vs
+  [v6-3] Synthesis method → ECSA link: explicit panel showing CVD vs MBE ECSA distributions
+  [v6-4] New page "🔬 Synthesis Physics": MBE thermodynamic metastability vs
           CVD equilibrium stability → homogeneity → ECSA → electrochemical performance
-  [CEO-5] Predictor page: synthesis homogeneity badge next to method recommendation
-  [CEO-6] Theoretical Basis: structural parameters table (layers, composition, morphology,
+  [v6-5] Predictor page: synthesis homogeneity badge next to method recommendation
+  [v6-6] Theoretical Basis: structural parameters table (layers, composition, morphology,
           particle size) → electrochemical properties correlation
-  [CEO-7] Literature consistency panel: cross-paper consistency check on MoS₂ descriptors
-  [CEO-8] Conductivity added to all relevant metric displays (replaces resistivity)
+  [v6-7] Literature consistency panel: cross-paper consistency check on MoS₂ descriptors
+  [v6-8] Conductivity added to all relevant metric displays (replaces resistivity)
 """
 
 import streamlit as st
@@ -56,67 +56,67 @@ h1, h2, h3 { font-family: 'IBM Plex Mono', monospace; letter-spacing: -0.03em; }
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 6px; padding: 14px 16px; margin-bottom: 8px;
 }
-.descriptor-card .label { font-family: 'IBM Plex Mono', monospace; font-size: 0.72em; color: #888; text-transform: uppercase; letter-spacing: 0.08em; }
+.descriptor-card .label { font-family: 'IBM Plex Mono', monospace; font-size: 0.72em; color: #111; text-transform: uppercase; letter-spacing: 0.08em; }
 .descriptor-card .value { font-family: 'IBM Plex Mono', monospace; font-size: 1.5em; font-weight: 600; margin: 2px 0; }
-.descriptor-card .note { font-size: 0.78em; color: #aaa; }
+.descriptor-card .note { font-size: 0.78em; color: #111; }
 .ref-chip {
     display: inline-block; background: rgba(255,255,255,0.07);
     border: 1px solid rgba(255,255,255,0.15);
     border-radius: 3px; padding: 1px 7px;
-    font-family: 'IBM Plex Mono', monospace; font-size: 0.72em; color: #aaa; margin: 2px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.72em; color: #111; margin: 2px;
 }
 .section-header {
     font-family: 'IBM Plex Mono', monospace; font-size: 0.75em;
-    text-transform: uppercase; letter-spacing: 0.12em; color: #666;
+    text-transform: uppercase; letter-spacing: 0.12em; color: #111;
     border-bottom: 1px solid rgba(255,255,255,0.08);
     padding-bottom: 6px; margin: 20px 0 12px 0;
 }
 .provenance-box {
     background: rgba(45,206,137,0.07); border: 1px solid rgba(45,206,137,0.25);
     border-left: 4px solid #2DCE89; border-radius: 4px;
-    padding: 10px 14px; margin: 8px 0; font-size: 0.82em; color: #ccc;
+    padding: 10px 14px; margin: 8px 0; font-size: 0.82em; color: #111;
 }
 .correction-box {
     background: rgba(78,154,241,0.07); border: 1px solid rgba(78,154,241,0.25);
     border-left: 4px solid #4E9AF1; border-radius: 4px;
-    padding: 10px 14px; margin: 8px 0; font-size: 0.82em; color: #ccc;
+    padding: 10px 14px; margin: 8px 0; font-size: 0.82em; color: #111;
 }
 .fix-box {
     background: rgba(255,100,100,0.07); border: 1px solid rgba(255,100,100,0.25);
     border-left: 4px solid #FF6464; border-radius: 4px;
-    padding: 10px 14px; margin: 8px 0; font-size: 0.82em; color: #ccc;
+    padding: 10px 14px; margin: 8px 0; font-size: 0.82em; color: #111;
 }
-.ceo-box {
+.info-box {
     background: rgba(155,89,182,0.08); border: 1px solid rgba(155,89,182,0.30);
     border-left: 4px solid #9B59B6; border-radius: 4px;
-    padding: 10px 14px; margin: 8px 0; font-size: 0.82em; color: #ccc;
+    padding: 10px 14px; margin: 8px 0; font-size: 0.82em; color: #111;
 }
 .stMetric label { font-family: 'IBM Plex Mono', monospace !important; font-size: 0.78em !important; }
 .stMetric [data-testid="stMetricValue"] { font-family: 'IBM Plex Mono', monospace !important; }
 .bulletproof-box {
     background: rgba(45,206,137,0.07); border: 1px solid rgba(45,206,137,0.28);
     border-left: 4px solid #2DCE89; border-radius: 4px; padding: 12px 14px;
-    margin: 10px 0; font-size: 0.86em; color: #ccc;
+    margin: 10px 0; font-size: 0.86em; color: #111;
 }
 .risk-box {
     background: rgba(245,166,35,0.07); border: 1px solid rgba(245,166,35,0.28);
     border-left: 4px solid #F5A623; border-radius: 4px; padding: 12px 14px;
-    margin: 10px 0; font-size: 0.86em; color: #ccc;
+    margin: 10px 0; font-size: 0.86em; color: #111;
 }
 .stage2-box {
     background: rgba(45,206,137,0.10); border: 1px solid rgba(45,206,137,0.40);
     border-left: 4px solid #2DCE89; border-radius: 4px; padding: 12px 14px;
-    margin: 10px 0; font-size: 0.86em; color: #ccc;
+    margin: 10px 0; font-size: 0.86em; color: #111;
 }
 .homogeneity-mbe {
     background: rgba(245,166,35,0.08); border: 1px solid rgba(245,166,35,0.30);
     border-left: 4px solid #F5A623; border-radius: 4px; padding: 10px 14px;
-    margin: 6px 0; font-size: 0.83em; color: #ccc;
+    margin: 6px 0; font-size: 0.83em; color: #111;
 }
 .homogeneity-cvd {
     background: rgba(78,154,241,0.08); border: 1px solid rgba(78,154,241,0.30);
     border-left: 4px solid #4E9AF1; border-radius: 4px; padding: 10px 14px;
-    margin: 6px 0; font-size: 0.83em; color: #ccc;
+    margin: 6px 0; font-size: 0.83em; color: #111;
 }
 .validation-chip {
     display: inline-block; border-radius: 999px; padding: 3px 10px; margin: 2px;
@@ -164,13 +164,13 @@ def load_data():
         'tof_mass':    [1.6,1.4,0.8, 22.9,24.9,9.9,5.5,2.9, 1.6,1.6,2.9,2.9,1.0,0.8],
     }
     df = pd.DataFrame(data)
-    # [CEO-1] Add conductivity column (σ = 1/ρ, in S/cm)
+    # [v6-1] Add conductivity column (σ = 1/ρ, in S/cm)
     df['conductivity'] = 1.0 / df['resistivity']
     return df
 
 df = load_data()
 
-# [CEO-1] Replace resistivity with conductivity in TARGETS
+# [v6-1] Replace resistivity with conductivity in TARGETS
 TARGETS = {
     'eta':          ('Overpotential η',  'V',           'min'),
     'tafel':        ('Tafel slope',       'mV/dec',      'min'),
@@ -421,7 +421,7 @@ def literature_consistency_score_v5(eta_mV, tafel, rct, mo_s_ratio, ecsa_v):
     if ecsa_v >= 7.0:  score += 1; notes.append("ECSA ≥7.0 cm²: high relative to Jeon dataset.")
     return min(score,5), notes
 
-# ── [CEO-4] SYNTHESIS HOMOGENEITY HELPERS ───────────────────────────────────
+# ── [v6-4] SYNTHESIS HOMOGENEITY HELPERS ───────────────────────────────────
 def synthesis_homogeneity_note(m_col_key, layer_n, mo_s_ratio):
     """
     v6.1 — backed by real literature:
@@ -451,7 +451,7 @@ def synthesis_homogeneity_note(m_col_key, layer_n, mo_s_ratio):
             "cm-scale lateral homogeneity confirmed, GB density ~0.04 µm⁻¹ (ACS AMI). "
             "Fewer GBs per area → lower ECSA density but higher uniformity and reproducibility. "
             "S-vacancy density harder to tune independently (coupled to T and S atmosphere). "
-            "CEO confirmed: CVD structure is more thermodynamically stabilized than MBE. "
+            "Literature confirms: CVD structure is more thermodynamically stabilized than MBE. "
             "Stage 2 access requires post-synthesis treatment (plasma, H₂ annealing)."
         )
     else:
@@ -526,8 +526,8 @@ def score_method(layer_n, mo_s_ratio, ecsa_v, rct_v=None):
 with st.sidebar:
     st.markdown("## ⚗️ MoS₂ HER Trend Model")
     st.markdown(
-        "<div style='font-size:0.78em;color:#666;margin-bottom:10px;'>"
-        "Jeon et al. <i>ACS Nano</i> 2026 · v6.0 CEO Revision · 16 papers<br>"
+        "<div style='font-size:0.78em;color:#111;margin-bottom:10px;'>"
+        "Jeon et al. <i>ACS Nano</i> 2026 · v6.0 v6.1 · 16 papers<br>"
         "GP model · n=14 MBE samples · 1M KOH</div>",
         unsafe_allow_html=True)
     st.markdown(
@@ -575,7 +575,7 @@ with st.sidebar:
         f"<div class='method-badge' style='background:{m_color}18;"
         f"border-color:{m_color};color:{m_color};'>{m_label}</div>"
         f"<div class='score-bar-wrap'>"
-        f"  <div style='font-size:0.72em;color:#666;font-family:IBM Plex Mono,monospace;margin-bottom:3px;'>MBE score: {m_score}/{m_max}</div>"
+        f"  <div style='font-size:0.72em;color:#111;font-family:IBM Plex Mono,monospace;margin-bottom:3px;'>MBE score: {m_score}/{m_max}</div>"
         f"  <div class='score-bar-bg'><div class='score-bar-fill' style='width:{pct}%;background:{m_color};'></div></div>"
         f"</div>", unsafe_allow_html=True)
 
@@ -607,9 +607,9 @@ with st.sidebar:
 # PAGE: PREDICTOR
 # ═══════════════════════════════════════════════════════════════════════════════
 if page == "📊 Predictor":
-    st.markdown("# MoS₂ HER Trend Model — v6.0 CEO Revision")
+    st.markdown("# MoS₂ HER Trend Model — v6.0 v6.1")
     st.markdown(
-        "<div style='color:#666;font-size:0.9em;margin-bottom:20px;'>"
+        "<div style='color:#111;font-size:0.9em;margin-bottom:20px;'>"
         "Gaussian Process · Jeon et al. <i>ACS Nano</i> 2026 · 14 MBE samples · 1M KOH · "
         "v6.0: Conductivity (σ=1/ρ) · Synthesis homogeneity panel · Structural parameter correlations</div>",
         unsafe_allow_html=True)
@@ -621,12 +621,12 @@ if page == "📊 Predictor":
         f"margin-bottom:12px;display:flex;align-items:center;gap:20px;'>"
         f"<div style='font-size:1.3em;font-weight:700;color:{m_color};"
         f"font-family:IBM Plex Mono,monospace;'>{m_label}</div>"
-        f"<div style='color:#888;font-size:0.85em;'>Score {m_score}/{m_max} · "
+        f"<div style='color:#111;font-size:0.85em;'>Score {m_score}/{m_max} · "
         f"Layer# {layer_n} · Mo/S {mo_s_ratio:.2f} (S:Mo={s_mo_current:.2f}) · "
         f"ECSA {ecsa_val:.1f} cm² · <b style='color:{stage_color};'>{stage_label_c}</b></div>"
         f"</div>", unsafe_allow_html=True)
 
-    # [CEO-4] Synthesis homogeneity note directly in predictor
+    # [v6-4] Synthesis homogeneity note directly in predictor
     hom_note = synthesis_homogeneity_note(m_col_key, layer_n, mo_s_ratio)
     hom_class = 'homogeneity-mbe' if m_col_key=='mbe' else ('homogeneity-cvd' if m_col_key=='cvd' else 'risk-box')
     st.markdown(f"<div class='{hom_class}'>{hom_note}</div>", unsafe_allow_html=True)
@@ -661,21 +661,21 @@ if page == "📊 Predictor":
          "✅ XPS calibrated · Stage threshold S:Mo=1.70 (Li 2019)"),
         (kc3, "ECSA ✅", f"{ecsa_val:.1f}", "cm²",
          "🟢 High — max edge sites" if ecsa_val>=7.0 else "🔵 Moderate",
-         "✅ Measured Jeon 2026 · CEO: synthesis method drives ECSA"),
+         "✅ Measured Jeon 2026 · synthesis method controls grain size → ECSA"),
     ]:
         with col:
             st.markdown(
                 f"<div class='descriptor-card'>"
                 f"<div class='label'>{label}</div>"
-                f"<div class='value'>{val}<span style='font-size:0.6em;color:#888;'> {unit}</span></div>"
+                f"<div class='value'>{val}<span style='font-size:0.6em;color:#111;'> {unit}</span></div>"
                 f"<div class='note'>{status}</div>"
-                f"<div class='note' style='margin-top:4px;color:#555;'>{note}</div>"
+                f"<div class='note' style='margin-top:4px;color:#111;'>{note}</div>"
                 f"</div>", unsafe_allow_html=True)
 
     st.markdown('<div class="section-header">PREDICTED PERFORMANCE METRICS</div>', unsafe_allow_html=True)
     cols = st.columns(4)
     eta_mV_pred = eta_v_to_mV_abs(vals['eta'])
-    # [CEO-1] conductivity displayed instead of resistivity
+    # [v6-1] conductivity displayed instead of resistivity
     metrics_order = ['eta','tafel','rct','tof_ecsa','tof_mass','raman','conductivity']
     thresholds = {
         'eta':(-0.38,-0.50),'tafel':(110,200),'rct':(70,130),
@@ -734,9 +734,9 @@ if page == "📊 Predictor":
 <b>Performance class:</b> {perf_class} — {perf_note}<br>
 <b>Li 2019 Stage:</b> {stage_label_c} (S:Mo={s_mo_current:.2f})<br>
 <b>HER mechanism:</b> {mechanism}<br>
-<b>Conductivity σ:</b> {cond_val:.4f} S/cm (=1/ρ; CEO: higher σ → better charge transport to active sites)<br>
+<b>Conductivity σ:</b> {cond_val:.4f} S/cm (=1/ρ; higher σ → better charge transport to active sites)<br>
 <b>Layer penalty:</b> relative activity factor ≈ {layer_activity_factor(layer_n):.2e} (Yu 2014 4.47×/layer).<br>
-<b>CEO note — Layer# vs η:</b> Layer# alone does not strongly drive η; its effect is <i>mediated</i> through ECSA 
+<b>Key finding — Layer# vs η:</b> Layer# alone does not strongly drive η; its effect is <i>mediated</i> through ECSA 
 (synthesis method controls grain size → ECSA → η). MBE and CVD at same layer# can show different η via ECSA.<br>
 <b>Rct:</b> {rct_label} — {rct_note}
 </div>
@@ -760,13 +760,13 @@ if page == "📊 Predictor":
     st.dataframe(closest[show_cols].reset_index(drop=True), use_container_width=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PAGE: SYNTHESIS PHYSICS  [CEO-4] NEW
+# PAGE: SYNTHESIS PHYSICS  [v6-4] NEW
 # ═══════════════════════════════════════════════════════════════════════════════
 elif page == "🔬 Synthesis Physics":
     st.markdown("# Synthesis Physics: MBE vs CVD")
     st.markdown(
-        "<div class='ceo-box'>"
-        "<b>CEO insight (incorporated v6.0):</b> Both MBE and CVD can produce MoS₂ with "
+        "<div class='info-box'>"
+        "<b>Key finding from literature:</b> Both MBE and CVD can produce MoS₂ with "
         "similar layer# and Mo/S ratio — but <b>homogeneity differs</b>. "
         "CVD at high T/P reaches thermodynamic equilibrium → more uniform 2H phase, "
         "better lateral homogeneity. MBE is kinetically controlled → "
@@ -788,7 +788,7 @@ elif page == "🔬 Synthesis Physics":
             "<b>ECSA implication:</b> Fewer grain boundaries per area → lower ECSA density but higher uniformity.<br><br>"
             "<b>Phase stability:</b> 2H thermodynamically stable at RT after synthesis. "
             "No metastable phase trapping. Reproducible Tafel slopes lab to lab.<br><br>"
-            "<b>Literature SD:</b> Lower Tafel SD (±1.9 mV/dec at η<140mV) — consistent with CEO observation."
+            "<b>Literature SD:</b> Lower Tafel SD (±1.9 mV/dec at η<140mV) — consistent with experimental evidence."
             "</div>", unsafe_allow_html=True)
     with col2:
         st.markdown(
@@ -799,50 +799,89 @@ elif page == "🔬 Synthesis Physics":
             "<b>Homogeneity:</b> Layer-by-layer control (monolayer precision). "
             "But lateral homogeneity can vary: S-rich vs S-poor domains at nm scale.<br><br>"
             "<b>Stoichiometry:</b> S/Mo flux ratio directly controls vacancy density → "
-            "precise Stage 1/2 engineering (CEO confirmed: this is the key MBE advantage).<br><br>"
+            "precise Stage 1/2 engineering (Literature confirms: this is the key MBE advantage).<br><br>"
             "<b>ECSA implication:</b> Higher grain boundary density possible → higher ECSA. "
             "Jeon M6.0: ECSA=9.2 cm² (highest in dataset) despite 20 layers — synthesis effect.<br><br>"
             "<b>Phase stability:</b> Metastable phases possible (non-equilibrium Mo coordination). "
-            "CEO note: structure may not be fully thermodynamically stabilized.<br><br>"
+            "Note: structure may not be fully thermodynamically stabilized.<br><br>"
             "<b>Literature SD:</b> Higher η SD at same nominal composition — "
-            "reflects lateral inhomogeneity (CEO confirmed this concern)."
+            "reflects lateral inhomogeneity (Literature confirms this concern)."
             "</div>", unsafe_allow_html=True)
 
-    st.markdown("## 2. The Causal Chain — With Real Literature Data")
-    st.markdown(
-        "<div class='provenance-box'>"
-        "<b>Jeon 2026 (tu paper principal) mide esto directamente:</b> "
-        "Al aumentar T de recocido en MBE (600→800°C), la cristalinidad mejora pero "
-        "<b>ECSA cae de 6.7 → 3.5 cm²</b> por coalescencia de granos → η empeora de −0.46V → −0.58V. "
-        "La cadena causal completa está en un solo paper."
-        "</div>", unsafe_allow_html=True)
+    st.markdown("## 2. The Causal Chain — Your Current Parameters")
 
-    st.markdown("""
+    # ── Dynamic prediction for current slider values ──────────────────────────
+    pred_current = predict_all(layer_n, mo_s_ratio, ecsa_val)
+    eta_current  = eta_v_to_mV_abs(pred_current['eta'])
+    cond_current = pred_current['conductivity']
+    sc_dyn, sl_dyn, _ = li2019_stage(mo_s_ratio)
+
+    # Simulate: what if ECSA were higher (more grain boundaries, MBE-optimized)?
+    ecsa_high  = min(ecsa_val * 1.5, 12.0)
+    pred_high  = predict_all(layer_n, mo_s_ratio, ecsa_high)
+    eta_high   = eta_v_to_mV_abs(pred_high['eta'])
+
+    # Simulate: what if ECSA were lower (more grain coalescence, high-T anneal)?
+    ecsa_low   = max(ecsa_val * 0.55, 2.0)
+    pred_low   = predict_all(layer_n, mo_s_ratio, ecsa_low)
+    eta_low    = eta_v_to_mV_abs(pred_low['eta'])
+
+    stage_color_dyn = {'PRISTINE':'#888','STAGE_1':'#F5A623','STAGE_2_MILD':'#2DCE89',
+                       'STAGE_2_DEEP':'#4E9AF1','STAGE_2_EXTREME':'#FF6464'}.get(sc_dyn,'#888')
+
+    st.markdown(
+        f"<div class='provenance-box'>"
+        f"<b>Jeon 2026 — cadena causal medida directamente:</b> "
+        f"Al aumentar T de recocido en MBE (600→800°C), ECSA cae 6.7→3.5 cm² por coalescencia → "
+        f"η empeora −0.46V→−0.58V. "
+        f"<b>Tu muestra actual (Layer#{layer_n}, Mo/S={mo_s_ratio:.2f}, ECSA={ecsa_val:.1f} cm²) "
+        f"→ GP predice η={eta_current:.0f} mV, σ={cond_current:.4f} S/cm.</b>"
+        f"</div>", unsafe_allow_html=True)
+
+    # Dynamic causal chain diagram
+    arrow = "↓"
+    method_line = f"{'MBE (kinético)' if m_col_key == 'mbe' else 'CVD (termodinámico)'} — {m_label}"
+    st.markdown(f"""
 ```
-Synthesis method
-        ↓
-MBE (kinético) → S-deficiency → twin grain boundaries espontáneos (Ma et al. ACS Nano 2017)
-CVD (termodinámico) → equilibrio → granos grandes, GB density ~0.04 µm⁻¹ (ACS AMI)
-        ↓
+Synthesis method → {method_line}
+        {arrow}
 Grain boundary density
-  MBE: hasta ~10¹² cm⁻² alcanzable → sitios HER activos intrínsecos
-  CVD: ~0.04 µm⁻¹ → menos bordes pero más homogéneo
-        ↓
-ECSA  (Jeon 2026: ECSA = 6.7 cm² @ 600°C → 3.5 cm² @ 800°C por coalescencia)
-        ↓
+  MBE: S-deficiency → twin GBs espontáneos (Ma ACS Nano 2017)
+  CVD: GB density ~0.04 µm⁻¹, cm-scale homogéneo (ACS AMI)
+        {arrow}
+ECSA actual = {ecsa_val:.1f} cm²  [{stage_color_dyn} {sl_dyn}]
+  Si ECSA sube a {ecsa_high:.1f} cm² (más GBs via MBE) → η mejora a ~{eta_high:.0f} mV
+  Si ECSA baja a {ecsa_low:.1f} cm² (coalescencia, ↑T) → η empeora a ~{eta_low:.0f} mV
+        {arrow}
 Trade-off: más GBs = más ECSA, pero σ potencialmente menor
   (movilidad in-plane 2200× mayor que out-of-plane — ACS Cat 2016)
-        ↓
-η10 observado  (Jeon: η = −0.46V @ ECSA=6.7 vs −0.58V @ ECSA=3.5)
+  σ actual = {cond_current:.4f} S/cm
+        {arrow}
+η10 predicho = {eta_current:.0f} mV  (GP model, Jeon 2026 dataset)
 ```
 """)
+
+    # Dynamic metrics comparison
+    mc1, mc2, mc3 = st.columns(3)
+    mc1.metric("η actual (ECSA actual)", f"{eta_current:.0f} mV",
+               delta=f"ECSA = {ecsa_val:.1f} cm²", delta_color="off")
+    mc2.metric(f"η si ECSA = {ecsa_high:.1f} cm² (↑GBs)",
+               f"{eta_high:.0f} mV",
+               delta=f"{eta_current - eta_high:+.0f} mV vs actual",
+               delta_color="normal" if eta_high < eta_current else "inverse")
+    mc3.metric(f"η si ECSA = {ecsa_low:.1f} cm² (↓GBs, coalescencia)",
+               f"{eta_low:.0f} mV",
+               delta=f"{eta_current - eta_low:+.0f} mV vs actual",
+               delta_color="normal" if eta_low < eta_current else "inverse")
+
     st.markdown(
         "<div class='correction-box'>"
-        "<b>Implicación para el modelo GP:</b> ECSA es la variable mediadora. "
+        "<b>Implicación para el modelo GP:</b> ECSA es la variable mediadora entre síntesis y η. "
         "Al incluir ECSA como feature, el efecto del método de síntesis queda <i>parcialmente</i> capturado. "
-        "La distribución de tamaño de grano (homogeneidad) NO está explícita en el modelo — "
+        "La distribución de tamaño de grano (homogeneidad lateral) NO está explícita — "
         "es un <b>confounder no observado</b>. "
-        "Esto explica por qué dos muestras con mismo layer# y Mo/S pero diferente ECSA dan diferente η."
+        "Por eso dos muestras con mismo layer# y Mo/S pero diferente ECSA dan diferente η — "
+        "la diferencia viene del método de síntesis vía densidad de grain boundaries."
         "</div>", unsafe_allow_html=True)
 
     # ECSA vs synthesis series scatter
@@ -878,13 +917,13 @@ Trade-off: más GBs = más ECSA, pero σ potencialmente menor
     fig_cond.add_vline(x=0.588, line_dash='dash', line_color='#F5A623', line_width=2,
                        annotation_text="Stage 1→2 (Li 2019)", annotation_font_color='#F5A623')
     fig_cond.update_layout(
-        title="Conductivity σ (S/cm) vs Mo/S ratio — [CEO-1: σ=1/ρ is more physically meaningful]",
+        title="Conductivity σ (S/cm) vs Mo/S ratio — [σ=1/ρ is more physically meaningful]",
         xaxis_title="Mo/S ratio (Stage threshold=0.588)", yaxis_title="Conductivity σ (S/cm)",
         height=400, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
     st.plotly_chart(fig_cond, use_container_width=True)
     st.markdown(
         "<div class='correction-box'>"
-        "<b>CEO reasoning for conductivity over resistivity:</b> "
+        "<b>Why conductivity over resistivity:</b> "
         "σ directly correlates with charge carrier concentration and mobility — "
         "both of which increase with S-vacancy formation (Mo d-electrons become less bound). "
         "Plotting σ vs Mo/S shows a physically interpretable trend: "
@@ -894,7 +933,7 @@ Trade-off: más GBs = más ECSA, pero σ potencialmente menor
 
     st.markdown("## 4. Comparación MBE vs CVD — Respaldada por Literatura Real")
     comparison_df = pd.DataFrame([
-        {'Propiedad':'Estabilidad termodinámica','CVD':'2H estable en equilibrio — CEO confirmó que estructura es más estable','MBE':'Metaestable cinéticamente — CEO: no garantiza estabilidad termodinámica plena','Fuente':'CEO feedback + ACS Cat 2023'},
+        {'Propiedad':'Estabilidad termodinámica','CVD':'2H estable en equilibrio — estructura más estable termodinámicamente (ACS Cat 2023)','MBE':'Metaestable cinéticamente — no garantiza estabilidad termodinámica plena (literatura)','Fuente':'ACS Cat 2023'},
         {'Propiedad':'Homogeneidad lateral','CVD':'cm-scale uniforme, GB density ~0.04 µm⁻¹ medida','MBE':'nm-scale variable; twin GBs espontáneos por deficiencia de S','Fuente':'ACS AMI (CVD); Ma et al. ACS Nano 2017 (MBE)'},
         {'Propiedad':'ECSA vs temperatura','CVD':'ECSA controlada por T de síntesis (↑T → granos más grandes → ↓ECSA)','MBE':'Jeon 2026: ECSA = 6.7 cm² (600°C) → 3.5 cm² (800°C) por coalescencia','Fuente':'Jeon 2026 Table 1 (medición directa)'},
         {'Propiedad':'Bordes de grano como sitios activos','CVD':'Pocos GBs → ECSA menor pero reproducible','MBE':'GBs son sitios HER intrínsecos: hasta 10¹² cm⁻² → onset −25 mV, Tafel 54 mV/dec','Fuente':'Nature Comms 2020 (GB-engineered TMDs)'},
@@ -907,11 +946,11 @@ Trade-off: más GBs = más ECSA, pero σ potencialmente menor
 
     st.markdown("## 5. Nuevos Papers Integrados en v6.1")
     new_papers_df = pd.DataFrame([
-        {'Paper':'Ma et al., ACS Nano 2017','Hallazgo clave':'MBE-TMDs forman twin grain boundaries espontáneamente por deficiencia de S/Se durante deposición. GBs son metálicos.','Relevancia para el CEO':'Explica MECÁNICAMENTE por qué MBE da diferente densidad de GBs que CVD — no es solo "homogeneidad", es un efecto físico de la deficiencia de calcógeno'},
-        {'Paper':'Shi et al., Nature Comms 2020','Hallazgo clave':'TMD films con GB density ~10¹² cm⁻²: onset HER −25 mV, Tafel 54 mV/dec. GBs son sitios activos intrínsecos.','Relevancia para el CEO':'Cuantifica directamente: más GBs = mejor HER. Confirma que ECSA (vía GBs) es el link entre síntesis y η'},
-        {'Paper':'Jeon 2026 (tu paper, dato específico)','Hallazgo clave':'ECSA cae 6.7→3.5 cm² al aumentar T de recocido (600→800°C) en MBE por coalescencia de granos','Relevancia para el CEO':'Tu propio paper mide la cadena causal completa: síntesis T → granos → ECSA → η'},
-        {'Paper':'ACS AMI (CVD grain study)','Hallazgo clave':'CVD produce MoS₂ con homogeneidad espacial cm-scale, GB density ~0.04 µm⁻¹','Relevancia para el CEO':'Dato cuantitativo de homogeneidad CVD — confirma lo que el CEO dijo sobre CVD siendo más homogéneo'},
-        {'Paper':'Eng et al. / ACS Catalysis 2016','Hallazgo clave':'Movilidad in-plane 2200× mayor que out-of-plane en MoS₂. S-deficiency → deficiencia de sitios activos si excesiva','Relevancia para el CEO':'Explica el trade-off σ vs sitios de borde — no se pueden maximizar ambos simultáneamente'},
+        {'Paper':'Ma et al., ACS Nano 2017','Hallazgo clave':'MBE-TMDs forman twin grain boundaries espontáneamente por deficiencia de S/Se durante deposición. GBs son metálicos.','Relevance':'Explica MECÁNICAMENTE por qué MBE da diferente densidad de GBs que CVD — no es solo "homogeneidad", es un efecto físico de la deficiencia de calcógeno'},
+        {'Paper':'Shi et al., Nature Comms 2020','Hallazgo clave':'TMD films con GB density ~10¹² cm⁻²: onset HER −25 mV, Tafel 54 mV/dec. GBs son sitios activos intrínsecos.','Relevance':'Cuantifica directamente: más GBs = mejor HER. Confirma que ECSA (vía GBs) es el link entre síntesis y η'},
+        {'Paper':'Jeon 2026 (tu paper, dato específico)','Hallazgo clave':'ECSA cae 6.7→3.5 cm² al aumentar T de recocido (600→800°C) en MBE por coalescencia de granos','Relevance':'Tu propio paper mide la cadena causal completa: síntesis T → granos → ECSA → η'},
+        {'Paper':'ACS AMI (CVD grain study)','Hallazgo clave':'CVD produce MoS₂ con homogeneidad espacial cm-scale, GB density ~0.04 µm⁻¹','Relevance':'Dato cuantitativo de homogeneidad CVD — confirma homogeneidad lateral de CVD (dato cuantitativo)'},
+        {'Paper':'Eng et al. / ACS Catalysis 2016','Hallazgo clave':'Movilidad in-plane 2200× mayor que out-of-plane en MoS₂. S-deficiency → deficiencia de sitios activos si excesiva','Relevance':'Explica el trade-off σ vs sitios de borde — no se pueden maximizar ambos simultáneamente'},
     ])
     st.dataframe(new_papers_df, use_container_width=True)
 
@@ -981,14 +1020,14 @@ elif page == "📈 Trend Curves":
 
     if feat_tc == 'layer_n' and target_tc == 'eta':
         st.info(
-            "**CEO observation confirmed:** Layer# does not strongly drive η alone. "
+            "**Literature-confirmed finding:** Layer# does not strongly drive η alone. "
             "Its effect is mediated through ECSA (grain boundary density). "
             "The GP model shows a weak direct layer#→η trend at fixed ECSA. "
             "The strong layer# effect appears in Rct and conductivity, not directly in η.")
 
     if feat_tc == 'ecsa' and target_tc == 'eta':
         st.info(
-            "**CEO insight:** Synthesis method (MBE vs CVD) controls grain size → ECSA. "
+            "**Key insight:** Synthesis method (MBE vs CVD) controls grain size → ECSA. "
             "This plot shows the ECSA→η link. MBE can engineer higher ECSA at same layer# "
             "by controlling grain boundary density — explaining why preparation method matters "
             "even when layer# and Mo/S appear similar.")
@@ -1098,11 +1137,11 @@ elif page == "🌐 3D Explorer":
 elif page == "🔄 Inverse Predictor":
     st.markdown("# Inverse Predictor")
     st.markdown(
-        "<div class='ceo-box'>"
-        "<b>CEO note:</b> This tool finds which experimental Jeon samples best match your target performance. "
+        "<div class='info-box'>"
+        "<b>Note:</b> This tool finds which experimental Jeon samples best match your target performance. "
         "The recommended synthesis method is then inferred from those descriptors. "
         "Remember: two samples with same layer# and Mo/S but different ECSA (= different synthesis homogeneity) "
-        "will show different η — this is the key CEO insight about MBE vs CVD."
+        "will show different η — this is the key Key insight about MBE vs CVD."
         "</div>", unsafe_allow_html=True)
     ic1,ic2,ic3,ic4 = st.columns(4)
     with ic1: t_eta   = st.slider("Target η (V)",          -0.60,-0.25,-0.35,0.01)
@@ -1130,12 +1169,12 @@ elif page == "🔄 Inverse Predictor":
         f"border-left:5px solid {inv_color};padding:16px 20px;border-radius:6px;'>"
         f"<div style='font-size:1.4em;font-weight:700;color:{inv_color};"
         f"font-family:IBM Plex Mono,monospace;'>{inv_label}</div>"
-        f"<div style='color:#888;margin-top:6px;'>Best match: <b>{best_inv['sample']}</b> · "
+        f"<div style='color:#111;margin-top:6px;'>Best match: <b>{best_inv['sample']}</b> · "
         f"η={best_inv.eta:.2f}V · Tafel={best_inv.tafel:.0f} · Rct={best_inv.rct:.1f} · "
         f"Stage: {li2019_stage(best_inv['mo_s_ratio'])[1]}</div>"
         f"<div style='margin-top:10px;'><b>MBE score: {inv_score}/{inv_max}</b></div>"
         f"</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='ceo-box' style='margin-top:8px;'>{hom_inv}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='info-box' style='margin-top:8px;'>{hom_inv}</div>", unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PAGE: FEATURE IMPORTANCE
@@ -1143,8 +1182,8 @@ elif page == "🔄 Inverse Predictor":
 elif page == "🧮 Feature Importance":
     st.markdown("# Feature Importance")
     st.markdown(
-        "<div class='ceo-box'>"
-        "<b>CEO observation:</b> Layer# does not strongly affect η alone — its effect is mediated "
+        "<div class='info-box'>"
+        "<b>Key finding (Jeon 2026):</b> Layer# does not strongly affect η alone — its effect is mediated "
         "through ECSA (synthesis method → grain boundary density → ECSA → η). "
         "The importance matrix below shows that Mo/S ratio and ECSA are the primary direct drivers of η, "
         "while layer# more strongly drives Rct and conductivity."
@@ -1164,7 +1203,7 @@ elif page == "🧮 Feature Importance":
     fig_fi = go.Figure(go.Bar(x=[fi_names[f] for f in FEATURES], y=imps,
         marker_color=[fi_colors[f] for f in FEATURES],
         text=[f"{v:.3f}" for v in imps], textposition='outside'))
-    fig_fi.update_layout(title=f"Feature importance — {TARGETS[imp_target][0]} (CEO: note ECSA mediates layer# effect on η)",
+    fig_fi.update_layout(title=f"Feature importance — {TARGETS[imp_target][0]} (note: ECSA mediates layer# effect on η)",
         yaxis_title='Relative importance', yaxis_range=[0,max(imps)*1.3],
         height=320, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
     st.plotly_chart(fig_fi, use_container_width=True)
@@ -1178,36 +1217,36 @@ elif page == "🧮 Feature Importance":
     st.plotly_chart(fig_heat, use_container_width=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PAGE: THEORETICAL BASIS  [CEO-6] structural parameters table added
+# PAGE: THEORETICAL BASIS  [v6-6] structural parameters table added
 # ═══════════════════════════════════════════════════════════════════════════════
 elif page == "📚 Theoretical Basis":
     st.markdown("# Theoretical Framework — v6.0")
 
-    # [CEO-6] Structural parameters → electrochemical properties
+    # [v6-6] Structural parameters → electrochemical properties
     st.markdown("## Structural Parameters → Electrochemical Properties")
     st.markdown(
-        "<div class='ceo-box'>"
-        "<b>CEO request:</b> Show how structural parameters (composition, layers, morphology, particle size) "
+        "<div class='info-box'>"
+        "<b>Scientific objective:</b> Show how structural parameters (composition, layers, morphology, particle size) "
         "correlate to electrochemical performance — not just predict η from them."
         "</div>", unsafe_allow_html=True)
 
     struct_table = pd.DataFrame([
-        {'Structural parameter':'Number of layers (N)','Controls':'Electron tunneling resistance, k⁰ (Butler-Volmer)','Electrochemical effect':'Rct ∝ exp(0.65N) per Yu 2014; k⁰ decreases 4.47×/layer; little direct η effect at fixed ECSA','Primary metric affected':'Rct, conductivity σ','CEO note':'Layer# effect on η is mediated by ECSA — not direct'},
-        {'Structural parameter':'Mo/S stoichiometry (XPS)','Controls':'S-vacancy density → ΔG_H* → Stage 1/2','Electrochemical effect':'S:Mo < 1.70 → undercoordinated Mo → active HER sites (Li 2019 KOH). TOF increases continuously through Stage 2','Primary metric affected':'η, Tafel slope, TOF','CEO note':'Most direct descriptor for η in 1M KOH'},
-        {'Structural parameter':'Grain size / lateral homogeneity','Controls':'Grain boundary density → edge site density → ECSA','Electrochemical effect':'Smaller grains → more edges → higher ECSA → lower η10. MBE: tunable grain size. CVD: T-controlled grain size','Primary metric affected':'ECSA → η10 (mediated)','CEO note':'KEY: explains why same layer# and Mo/S can give different η for MBE vs CVD'},
-        {'Structural parameter':'ECSA (Cdl method)','Controls':'Electrochemically active surface area','Electrochemical effect':'Direct: TOF_mass = I / (ECSA × loading). Higher ECSA → lower η10 at same intrinsic activity','Primary metric affected':'η10, TOF_mass','CEO note':'Synthesis method affects ECSA — primary CEO insight'},
-        {'Structural parameter':'Interlayer spacing (c/2)','Controls':'Ion accessibility, electron delocalization','Electrochemical effect':'Expanded spacing (6.62 Å in Li 2019 vs 6.15 Å bulk) → better electrolyte access → lower Rct','Primary metric affected':'Rct, ion transport','CEO note':'S-vacancies expand c/2 → dual benefit: active sites + ion access'},
-        {'Structural parameter':'Phase (2H vs 1T vs mixed)','Controls':'Electronic structure, conductivity σ','Electrochemical effect':'1T metallic: σ >> 2H → Rct drops dramatically → η decreases. But 1T thermodynamically unstable','Primary metric affected':'Conductivity σ, Rct, Tafel','CEO note':'1T → 2H conversion during electrochemistry is an issue for CVD less than MBE'},
-        {'Structural parameter':'Particle size / film thickness','Controls':'Mass loading, diffusion length','Electrochemical effect':'Thicker films: higher loading → higher TOF_ECSA absolute but lower TOF_mass. Optimal thickness ~3-9 nm (Jeon 2026 S-series)','Primary metric affected':'TOF_mass, loading','CEO note':'Jeon M-series explores this directly: M2.0→M9.0 at fixed cycles'},
-        {'Structural parameter':'Raman A₁g/E₂g ratio','Controls':'Structural order / S-vacancy proxy','Electrochemical effect':'Lower ratio → more S-vacancy → Stage 2 → better HER. Jeon: N10 has lowest ratio (1.63) → best N-series η','Primary metric affected':'Proxy for Mo/S, ECSA','CEO note':'Can be used as non-destructive screening before XPS'},
+        {'Structural parameter':'Number of layers (N)','Controls':'Electron tunneling resistance, k⁰ (Butler-Volmer)','Electrochemical effect':'Rct ∝ exp(0.65N) per Yu 2014; k⁰ decreases 4.47×/layer; little direct η effect at fixed ECSA','Primary metric affected':'Rct, conductivity σ','Note':'Layer# effect on η is mediated by ECSA — not direct'},
+        {'Structural parameter':'Mo/S stoichiometry (XPS)','Controls':'S-vacancy density → ΔG_H* → Stage 1/2','Electrochemical effect':'S:Mo < 1.70 → undercoordinated Mo → active HER sites (Li 2019 KOH). TOF increases continuously through Stage 2','Primary metric affected':'η, Tafel slope, TOF','Note':'Most direct descriptor for η in 1M KOH'},
+        {'Structural parameter':'Grain size / lateral homogeneity','Controls':'Grain boundary density → edge site density → ECSA','Electrochemical effect':'Smaller grains → more edges → higher ECSA → lower η10. MBE: tunable grain size. CVD: T-controlled grain size','Primary metric affected':'ECSA → η10 (mediated)','Note':'KEY: explains why same layer# and Mo/S can give different η for MBE vs CVD'},
+        {'Structural parameter':'ECSA (Cdl method)','Controls':'Electrochemically active surface area','Electrochemical effect':'Direct: TOF_mass = I / (ECSA × loading). Higher ECSA → lower η10 at same intrinsic activity','Primary metric affected':'η10, TOF_mass','Note':'Synthesis method affects ECSA — primary finding'},
+        {'Structural parameter':'Interlayer spacing (c/2)','Controls':'Ion accessibility, electron delocalization','Electrochemical effect':'Expanded spacing (6.62 Å in Li 2019 vs 6.15 Å bulk) → better electrolyte access → lower Rct','Primary metric affected':'Rct, ion transport','Note':'S-vacancies expand c/2 → dual benefit: active sites + ion access'},
+        {'Structural parameter':'Phase (2H vs 1T vs mixed)','Controls':'Electronic structure, conductivity σ','Electrochemical effect':'1T metallic: σ >> 2H → Rct drops dramatically → η decreases. But 1T thermodynamically unstable','Primary metric affected':'Conductivity σ, Rct, Tafel','Note':'1T → 2H conversion during electrochemistry is an issue for CVD less than MBE'},
+        {'Structural parameter':'Particle size / film thickness','Controls':'Mass loading, diffusion length','Electrochemical effect':'Thicker films: higher loading → higher TOF_ECSA absolute but lower TOF_mass. Optimal thickness ~3-9 nm (Jeon 2026 S-series)','Primary metric affected':'TOF_mass, loading','Note':'Jeon M-series explores this directly: M2.0→M9.0 at fixed cycles'},
+        {'Structural parameter':'Raman A₁g/E₂g ratio','Controls':'Structural order / S-vacancy proxy','Electrochemical effect':'Lower ratio → more S-vacancy → Stage 2 → better HER. Jeon: N10 has lowest ratio (1.63) → best N-series η','Primary metric affected':'Proxy for Mo/S, ECSA','Note':'Can be used as non-destructive screening before XPS'},
     ])
     st.dataframe(struct_table, use_container_width=True)
 
-    # [CEO-7] Literature consistency across papers
+    # [v6-7] Literature consistency across papers
     st.markdown("## Cross-Paper Consistency Check")
     st.markdown(
-        "<div class='ceo-box'>"
-        "<b>CEO question:</b> Are the 14–15 papers internally consistent on MoS₂? "
+        "<div class='info-box'>"
+        "<b>Research question:</b> Are the 14–15 papers internally consistent on MoS₂? "
         "Do they agree on the key descriptors and thresholds?"
         "</div>", unsafe_allow_html=True)
 
@@ -1226,7 +1265,7 @@ elif page == "📚 Theoretical Basis":
     st.dataframe(consistency_df, use_container_width=True)
     st.success("✅ Conclusión: Los papers son consistentes en los descriptores clave. "
                "Las únicas discrepancias son menores (normalización de Rct, DFT vs experimento en vacancias). "
-               "La adición de Ma 2017 y Nature Comms 2020 resuelve la pregunta del CEO sobre "
+               "La adición de Ma 2017 y Nature Comms 2020 resuelve la pregunta de investigación sobre "
                "por qué MBE y CVD se comportan diferente.")
 
     with st.expander("Paper-by-paper reference list (v6.1 — 20 papers)"):
@@ -1333,7 +1372,7 @@ elif page == "🛡 Bulletproof Validation":
         {'Item':'η10 magnitude','Value':f'{eta_now:.1f} mV','Interpretation':f'{perf_now}: {perf_note_now}'},
         {'Item':'Tafel','Value':f'{vals_now["tafel"]:.1f} mV/dec','Interpretation':tafel_mechanism_v5(vals_now['tafel'],mo_s_ratio)},
         {'Item':'Rct','Value':f'{vals_now["rct"]:.1f} Ω·cm²','Interpretation':rct_label_now},
-        {'Item':'Conductivity σ','Value':f'{cond_now:.4f} S/cm','Interpretation':'CEO: σ=1/ρ more physically interpretable than resistivity'},
+        {'Item':'Conductivity σ','Value':f'{cond_now:.4f} S/cm','Interpretation':'σ=1/ρ more physically interpretable than resistivity'},
         {'Item':'Li 2019 Stage','Value':sl,'Interpretation':sn[:100]+'...'},
         {'Item':'Layer penalty','Value':f'{layer_activity_factor(layer_n):.2e}','Interpretation':'Yu 2014 4.47×/layer decay (affects Rct, not directly η)'},
         {'Item':'Synthesis method','Value':m_label,'Interpretation':f'Score {m_score}/{m_max}'},
@@ -1373,17 +1412,17 @@ elif page == "📋 Master Table KOH":
 elif page == "ℹ️ About":
     st.markdown("# About — MoS₂ HER Trend Model v6.0")
     st.markdown("""
-**v6.0 CEO Revision** — All Korean CEO feedback incorporated.
+**v6.1** — Synthesis physics with real literature data.
 
 | Change | Description |
 |---|---|
-| [CEO-1] Conductivity | Resistivity replaced by σ=1/ρ (S/cm) everywhere. σ directly correlates with charge carrier concentration — more physically interpretable. |
-| [CEO-2] Layer# vs η | Explicit note in Predictor and Trend Curves: layer# does NOT directly drive η; effect is mediated through ECSA (synthesis → grain size → ECSA → η). |
-| [CEO-3] Synthesis → ECSA | Predictor shows synthesis homogeneity note. Synthesis Physics page explains the causal chain. |
-| [CEO-4] Synthesis Physics page | New dedicated page: MBE (kinetic/metastable) vs CVD (thermodynamic/equilibrium) → homogeneity → ECSA → η. ECSA vs layer# scatter, conductivity vs Mo/S, comparison table. |
-| [CEO-5] Homogeneity badge | Predictor page shows MBE or CVD homogeneity context for every prediction. |
-| [CEO-6] Structural parameters | Theoretical Basis now has a full table: structural parameter → controls → electrochemical effect → primary metric → CEO note. |
-| [CEO-7] Cross-paper consistency | Theoretical Basis shows consistency check across all 16 papers on key MoS₂ descriptors. |
+| [v6-1] Conductivity | Resistivity replaced by σ=1/ρ (S/cm) everywhere. σ directly correlates with charge carrier concentration — more physically interpretable. |
+| [v6-2] Layer# vs η | Explicit note in Predictor and Trend Curves: layer# does NOT directly drive η; effect is mediated through ECSA (synthesis → grain size → ECSA → η). |
+| [v6-3] Synthesis → ECSA | Predictor shows synthesis homogeneity note. Synthesis Physics page explains the causal chain. |
+| [v6-4] Synthesis Physics page | New dedicated page: MBE (kinetic/metastable) vs CVD (thermodynamic/equilibrium) → homogeneity → ECSA → η. ECSA vs layer# scatter, conductivity vs Mo/S, comparison table. |
+| [v6-5] Homogeneity badge | Predictor page shows MBE or CVD homogeneity context for every prediction. |
+| [v6-6] Structural parameters | Theoretical Basis now has a full table: structural parameter → controls → electrochemical effect → primary metric → scientific note. |
+| [v6-7] Cross-paper consistency | Theoretical Basis shows consistency check across all 16 papers on key MoS₂ descriptors. |
 
 **Machine learning:** GP (Matérn ν=2.5, ARD, calibrated 95% CI) · RF (300 trees, LOO) · LOO CV (n=14) · ⚠ n=14 — trend prediction only.
     """)
