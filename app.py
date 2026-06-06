@@ -621,7 +621,12 @@ if page == "📊 Predictor":
     b1.metric("Confidence",confidence)
     b2.metric("η10 magnitude",f"{eta_mV_pred:.0f} ± {eta_total_std_mV:.0f} mV")
     b3.metric("Tafel",f"{vals['tafel']:.0f} ± {tafel_total_std:.0f}")
-    b4.metric("Stage (Li 2019)",stage_label_c.replace("mild undercoord. Mo","Stage 2").replace("deep undercoord. Mo","Stage 2 deep").replace("point defects","Stage 1").replace("structural risk","Risk").split("(")[0].strip())
+    b4.metric("Stage", 
+    "Pristine" if stage_code_c=="PRISTINE" else
+    "Stage 1" if stage_code_c=="STAGE_1" else
+    "Stage 2" if stage_code_c=="STAGE_2_MILD" else
+    "Stage 2 deep" if stage_code_c=="STAGE_2_DEEP" else
+    "Stage 2 risk")
     b5.metric("Lit. score",f"{lit_score:.1f}/5")
 
     box_class = 'stage2-box' if 'Stage 2' in vacancy_label else 'bulletproof-box'
