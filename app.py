@@ -352,7 +352,8 @@ def classify_performance_eta_v5(eta_mV):
     if eta_mV<130: return "HIGH","MoS2/NiS (130mV) / MoS2/MXene (94mV) tier — very strong alkaline HER."
     if eta_mV<180: return "GOOD","1T MoS2 / MoS2-SV / Stage 2 regime — good engineered MoS2 performance."
     if eta_mV<280: return "MODERATE","Stage 1 regime / MoS2 nanoflakes — improved over bulk, kinetics limited."
-    return "LOW","Bulk-like / pristine 2H MoS2 behavior (>280mV in KOH = Volmer-limited)."
+    if eta_mV<400: return "GOOD (Best MBE on Si)","Best performance range for MBE-grown MoS2 on Si substrate (Jeon 2026). Optimum sample MoS-N10 achieves 330mV. Further improvement requires heterostructure or phase engineering."
+    return "MODERATE (MBE)","Within Jeon 2026 MBE dataset range (330-580mV). S-vacancy or ECSA engineering recommended."
 
 def classify_rct_v5(rct,electrolyte='1M KOH'):
     if rct<10:  return "EXCELLENT Rct","Mo5N6/MoS2 tier (<10Ω); near-ideal charge transfer."
@@ -620,7 +621,7 @@ if page == "📊 Predictor":
     b1.metric("Confidence",confidence)
     b2.metric("η10 magnitude",f"{eta_mV_pred:.0f} ± {eta_total_std_mV:.0f} mV")
     b3.metric("Tafel",f"{vals['tafel']:.0f} ± {tafel_total_std:.0f}")
-    b4.metric("Stage (Li 2019)",stage_label_c.split('(')[0].strip())
+    b4.metric("Stage (Li 2019)",stage_label_c.replace("mild undercoord. Mo","Stage 2").replace("deep undercoord. Mo","Stage 2 deep").replace("point defects","Stage 1").replace("structural risk","Risk").split("(")[0].strip())
     b5.metric("Lit. score",f"{lit_score:.1f}/5")
 
     box_class = 'stage2-box' if 'Stage 2' in vacancy_label else 'bulletproof-box'
@@ -631,7 +632,7 @@ if page == "📊 Predictor":
 <b>Li 2019 Stage:</b> {stage_label_c} (S:Mo={s_mo_current:.2f})<br>
 <b>HER mechanism:</b> {mechanism}<br>
 <b>Defect regime:</b> {vacancy_label} — {vacancy_note}<br>
-<b>Conductivity σ:</b> {vals['conductivity']:.4f} S/cm (=1/ρ; higher σ → better charge transport)<br>
+<b>Conductivity σ:</b> {vals['conductivity']:.4f} S/cm (=1/ρ; higher σ means better charge transport to active sites)<br>
 <b>Layer penalty:</b> relative activity factor ≈ {layer_factor:.2e} (Yu 2014 4.47×/layer).<br>
 <b>Rct:</b> {rct_label} — {rct_note}
 </div>
@@ -713,51 +714,125 @@ elif page == "🔬 Synthesis Physics":
 
     st.markdown(
         f"<div class='provenance-box'>"
-        f"<b>Jeon 2026 mide esto directamente:</b> Al aumentar T de recocido MBE (600→800°C), "
-        f"cristalinidad mejora pero ECSA cae 6.7→3.5 cm² por coalescencia de granos → η empeora −0.46V→−0.58V.<br>"
-        f"<b>Tus parámetros actuales (Layer#{layer_n}, Mo/S={mo_s_ratio:.2f}, ECSA={ecsa_val:.1f} cm²) "
-        f"→ GP predice η={eta_now:.0f} mV, σ={cond_now:.4f} S/cm [{sl_d}]</b>"
+        f"<b>Jeon 2026 (direct measurement):</b> "
+        f"When MBE annealing temperature increases from 600 to 800°C, crystallinity improves but "
+        f"ECSA drops from 6.7 to 3.5 cm² due to grain coalescence. "
+        f"As a result, overpotential worsens from -0.46V to -0.58V.<br><br>"
+        f"<b>Your current parameters: Layer#{layer_n}, Mo/S={mo_s_ratio:.2f}, ECSA={ecsa_val:.1f} cm² "
+        f"— GP predicts η={eta_now:.0f} mV, σ={cond_now:.4f} S/cm [{sl_d}]</b>"
         f"</div>", unsafe_allow_html=True)
 
+    # Fully dynamic text based on current slider values
+    if m_col_key == 'mbe':
+        synth_step1 = (
+            f"Your parameters (Layer#{layer_n}, Mo/S={mo_s_ratio:.2f}, ECSA={ecsa_val:.1f} cm²) "
+            f"indicate **Physical Method (MBE)**. "
+            f"In MBE, sulfur deficiency during deposition spontaneously generates high-density "
+            f"twin grain boundaries (Ma et al. ACS Nano 2017). "
+            f"The structure is thermodynamically metastable — crystallinity and grain size are "
+            f"controlled by annealing temperature and sulfur flux, not by thermodynamic equilibrium."
+        )
+    elif m_col_key == 'cvd':
+        synth_step1 = (
+            f"Your parameters (Layer#{layer_n}, Mo/S={mo_s_ratio:.2f}, ECSA={ecsa_val:.1f} cm²) "
+            f"indicate **Chemical Method (CVD)**. "
+            f"In CVD, high temperature and pressure drive the system toward thermodynamic equilibrium. "
+            f"This produces large, uniform grains with low grain boundary density "
+            f"of approximately 0.04 µm⁻¹ (ACS AMI). The 2H phase is thermodynamically stable."
+        )
+    else:
+        synth_step1 = (
+            f"Your parameters (Layer#{layer_n}, Mo/S={mo_s_ratio:.2f}, ECSA={ecsa_val:.1f} cm²) "
+            f"are compatible with **both MBE and CVD**. "
+            f"MBE would generate grain boundaries through sulfur deficiency (Ma et al. ACS Nano 2017), "
+            f"while CVD would produce larger, more uniform grains (GB density ~0.04 µm⁻¹, ACS AMI)."
+        )
+
+    if ecsa_val >= 7.0:
+        ecsa_step2 = (
+            f"Your ECSA of **{ecsa_val:.1f} cm²** is relatively high within the Jeon 2026 dataset "
+            f"(range: 3.5–9.2 cm²). High ECSA means high grain boundary density, which provides "
+            f"more active edge sites for hydrogen evolution. "
+            f"Grain boundary density can reach up to 10¹² cm⁻² in optimized MBE films — "
+            f"such films show onset potential of -25 mV and Tafel slope of 54 mV/dec "
+            f"(Nature Communications 2020)."
+        )
+    else:
+        ecsa_step2 = (
+            f"Your ECSA of **{ecsa_val:.1f} cm²** is relatively low within the Jeon 2026 dataset "
+            f"(range: 3.5–9.2 cm²). Lower ECSA indicates fewer grain boundaries and edge sites. "
+            f"This is consistent with higher annealing temperatures or CVD growth, "
+            f"which produce larger grains with fewer boundaries. "
+            f"Increasing ECSA toward 8–9 cm² (as in Jeon MoS-N10 or MoS-M6.0) "
+            f"would be expected to improve HER performance."
+        )
+
+    stage_step3 = (
+        f"Your Mo/S ratio of {mo_s_ratio:.2f} (S:Mo = {s_mo_current:.2f}) places this sample "
+        f"in **{sl_d}**. "
+    )
+    if stage_code_c == 'STAGE_1':
+        stage_step3 += (
+            f"In this regime, point defects are activating. "
+            f"Tafel slope decreases rapidly with increasing vacancy density in KOH (Li 2019). "
+            f"Increasing Mo/S ratio further (above 0.588) would enter Stage 2, "
+            f"where undercoordinated Mo regions form and TOF continues to increase."
+        )
+    elif stage_code_c in ['STAGE_2_MILD', 'STAGE_2_DEEP']:
+        stage_step3 += (
+            f"In this regime, undercoordinated Mo regions are active HER sites. "
+            f"In KOH, TOF continuously increases through Stage 2, unlike in H₂SO₄ where it saturates (Li 2019). "
+            f"This is a high-activity regime for alkaline HER."
+        )
+    else:
+        stage_step3 += (
+            f"Near-stoichiometric MoS₂. The basal plane is mostly inert. "
+            f"Reducing the Mo/S ratio below 0.588 would enter Stage 1 (point defect activation)."
+        )
+
     st.markdown(f"""
-```
-Synthesis method
-        ↓
-MBE (kinético) → S-deficiency → twin grain boundaries espontáneos (Ma et al. ACS Nano 2017)
-CVD (termodinámico) → equilibrio → granos grandes, GB density ~0.04 µm⁻¹ (ACS AMI)
-        ↓
-Grain boundary density
-  MBE: hasta ~10¹² cm⁻² → sitios HER activos intrínsecos (Nature Comms 2020: onset −25 mV)
-  CVD: ~0.04 µm⁻¹ → menos bordes pero más homogéneo
-        ↓
-ECSA actual = {ecsa_val:.1f} cm²  [{sl_d}]
-  Si ECSA sube a {ecsa_high:.1f} cm² (más GBs via MBE) → η mejora a ~{eta_high:.0f} mV
-  Si ECSA baja a {ecsa_low:.1f} cm² (coalescencia, ↑T) → η empeora a ~{eta_low:.0f} mV
-        ↓
-Trade-off: más GBs = más ECSA, pero σ potencialmente menor
-  (movilidad in-plane 2200× mayor que out-of-plane — ACS Cat 2016)
-  σ actual = {cond_now:.4f} S/cm
-        ↓
-η10 predicho = {eta_now:.0f} mV  (GP model, Jeon 2026 dataset)
-```
+**Step 1 — Synthesis method determines grain structure**
+
+{synth_step1}
+
+**Step 2 — Grain boundary density determines ECSA**
+
+{ecsa_step2}
+
+**Step 3 — Stoichiometry and stage determine intrinsic activity**
+
+{stage_step3}
+
+**Step 4 — ECSA and intrinsic activity together determine overpotential**
+
+With your current ECSA of {ecsa_val:.1f} cm², the model predicts η = **{eta_now:.0f} mV**.
+
+If ECSA increases to {ecsa_high:.1f} cm² (more grain boundaries through MBE optimization), predicted η improves to approximately **{eta_high:.0f} mV**.
+
+If ECSA decreases to {ecsa_low:.1f} cm² (grain coalescence due to higher annealing temperature), predicted η worsens to approximately **{eta_low:.0f} mV**.
+
+**Step 5 — The conductivity trade-off**
+
+Higher grain boundary density increases ECSA but may reduce electrical conductivity σ. In-plane electron mobility is 2200 times faster than out-of-plane mobility (ACS Catalysis 2016). Smaller grains provide more active sites but interrupt conductive pathways. Your current conductivity σ = **{cond_now:.4f} S/cm**.
 """)
 
     mc1,mc2,mc3 = st.columns(3)
-    mc1.metric("η actual", f"{eta_now:.0f} mV", delta=f"ECSA={ecsa_val:.1f} cm²", delta_color="off")
-    mc2.metric(f"η si ECSA={ecsa_high:.1f} cm² (↑GBs)", f"{eta_high:.0f} mV",
-               delta=f"{eta_now-eta_high:+.0f} mV vs actual",
+    mc1.metric("Current η", f"{eta_now:.0f} mV", delta=f"ECSA={ecsa_val:.1f} cm²", delta_color="off")
+    mc2.metric(f"η if ECSA={ecsa_high:.1f} cm² (more GBs)", f"{eta_high:.0f} mV",
+               delta=f"{eta_now-eta_high:+.0f} mV vs current",
                delta_color="normal" if eta_high<eta_now else "inverse")
-    mc3.metric(f"η si ECSA={ecsa_low:.1f} cm² (↓GBs)", f"{eta_low:.0f} mV",
-               delta=f"{eta_now-eta_low:+.0f} mV vs actual",
+    mc3.metric(f"η if ECSA={ecsa_low:.1f} cm² (grain coalescence)", f"{eta_low:.0f} mV",
+               delta=f"{eta_now-eta_low:+.0f} mV vs current",
                delta_color="normal" if eta_low<eta_now else "inverse")
 
     st.markdown(
         "<div class='correction-box'>"
-        "<b>Implicación para el modelo GP:</b> ECSA es la variable mediadora entre síntesis y η. "
-        "Al incluir ECSA como feature, el efecto del método de síntesis queda <i>parcialmente</i> capturado. "
-        "La distribución de tamaño de grano (homogeneidad lateral) NO está explícita — "
-        "es un <b>confounder no observado</b>. "
-        "Por eso dos muestras con mismo layer# y Mo/S pero diferente ECSA dan diferente η."
+        "<b>Implication for the GP model:</b> ECSA is the mediating variable between synthesis method and η. "
+        "By including ECSA as a feature, the model partially captures the synthesis method effect. "
+        "However, grain size distribution (lateral homogeneity) is not explicitly in the model — "
+        "it is an <b>unobserved variable</b>. "
+        "This is why two samples with the same layer# and Mo/S but different ECSA give different η — "
+        "the difference originates from the synthesis method through grain boundary density."
         "</div>", unsafe_allow_html=True)
 
     st.markdown("## 3. Conductivity σ vs Mo/S ratio")
@@ -1150,7 +1225,7 @@ elif page == "🛡 Bulletproof Validation":
         {'Item':'η10 magnitude','Value':f'{eta_now:.1f} mV','Interpretation':f'{perf_now}: {perf_note_now}'},
         {'Item':'Tafel','Value':f'{vals_now["tafel"]:.1f} mV/dec','Interpretation':tafel_mechanism_v5(vals_now['tafel'],mo_s_ratio)},
         {'Item':'Rct','Value':f'{vals_now["rct"]:.1f} Ω·cm²','Interpretation':f'{rct_label_now}: {rct_note_now}'},
-        {'Item':'Conductivity σ','Value':f'{vals_now["conductivity"]:.4f} S/cm','Interpretation':'σ=1/ρ — higher σ → better charge transport to active sites'},
+        {'Item':'Conductivity σ','Value':f'{vals_now["conductivity"]:.4f} S/cm','Interpretation':'σ=1/ρ — higher σ means better charge transport to active sites'},
         {'Item':'Li 2019 Stage','Value':sl,'Interpretation':sn[:120]+'...'},
         {'Item':'S:Mo ratio','Value':f'{s_mo_current:.2f}','Interpretation':f'{"Stage 2 (HIGH in KOH)" if s_mo_current<1.70 else "Stage 1 or Pristine"}'},
         {'Item':'Layer penalty','Value':f'{layer_activity_factor(layer_n):.2e}','Interpretation':'Yu 2014 4.47×/layer decay'},
