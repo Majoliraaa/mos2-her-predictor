@@ -1,5 +1,5 @@
 """
-MoS₂ HER Trend Model — v5.1
+MoS₂ HER Trend Model 
 =============================
 BASE: v5.0 (funcionaba correctamente)
 ADDED (profesor feedback only):
@@ -629,17 +629,39 @@ if page == "📊 Predictor":
     "Stage 2 risk")
     b5.metric("Lit. score",f"{lit_score:.1f}/5")
 
-    box_class = 'stage2-box' if 'Stage 2' in vacancy_label else 'bulletproof-box'
+    # Simple 3-line summary — easy to read during presentation
+    # Line 1: How good is this catalyst?
+    if eta_mV_pred < 180:
+        quality_line = f"This is a <b>good catalyst</b> for hydrogen production. Overpotential of {eta_mV_pred:.0f} mV is within the best range for MBE-grown MoS₂ on silicon (Jeon 2026 optimum: 330 mV)."
+    elif eta_mV_pred < 350:
+        quality_line = f"This is a <b>moderate catalyst</b>. Overpotential of {eta_mV_pred:.0f} mV. Increasing ECSA or Mo/S ratio would improve performance."
+    else:
+        quality_line = f"This catalyst has <b>low activity</b>. Overpotential of {eta_mV_pred:.0f} mV. The Mo/S ratio is near-stoichiometric — more sulfur vacancies are needed to activate the surface."
+
+    # Line 2: What is limiting performance?
+    if stage_code_c == 'PRISTINE':
+        limit_line = "The surface is mostly <b>inactive</b>. The Mo/S ratio is too close to perfect stoichiometry — the basal plane does not have enough active sites."
+    elif stage_code_c == 'STAGE_1':
+        limit_line = f"The catalyst is in <b>Stage 1</b>. Point defects are starting to activate the surface. Increasing Mo/S above 0.59 would enter Stage 2 and further improve activity."
+    elif stage_code_c in ['STAGE_2_MILD', 'STAGE_2_DEEP']:
+        limit_line = f"The catalyst is in <b>Stage 2</b>. Undercoordinated molybdenum sites are active. In alkaline conditions (KOH), activity continues to increase through this stage (Li 2019)."
+    else:
+        limit_line = "The catalyst has <b>too many vacancies</b>. The structure is at risk of collapse. Jeon MoS-M2.0 confirms this regime gives worse performance."
+
+    # Line 3: What does synthesis method mean for this result?
+    if m_col_key == 'mbe':
+        synth_line = f"<b>Physical method (MBE) recommended.</b> MBE directly controls the S/Mo ratio during growth, giving precise access to Stage 1 or Stage 2 without post-treatment."
+    elif m_col_key == 'cvd':
+        synth_line = f"<b>Chemical method (CVD) is sufficient.</b> At this near-stoichiometric composition, CVD at high temperature produces the required 2H phase reliably."
+    else:
+        synth_line = f"<b>Both methods can work here.</b> MBE gives more control over vacancy density; CVD gives better lateral homogeneity."
+
+    box_class = 'stage2-box' if stage_code_c in ['STAGE_2_MILD','STAGE_2_DEEP'] else 'bulletproof-box'
     st.markdown(f"""
 <div class='{box_class}'>
-<b>Prediction role:</b> Physics-informed, uncertainty-aware <b>trend prediction</b>.<br>
-<b>Performance class:</b> {perf_class} — {perf_note}<br>
-<b>Li 2019 Stage:</b> {stage_label_c} (S:Mo={s_mo_current:.2f})<br>
-<b>HER mechanism:</b> {mechanism}<br>
-<b>Defect regime:</b> {vacancy_label} — {vacancy_note}<br>
-<b>Conductivity σ:</b> {vals['conductivity']:.4f} S/cm (=1/ρ; higher σ means better charge transport to active sites)<br>
-<b>Layer penalty:</b> relative activity factor ≈ {layer_factor:.2e} (Yu 2014 4.47×/layer).<br>
-<b>Rct:</b> {rct_label} — {rct_note}
+{quality_line}<br><br>
+{limit_line}<br><br>
+{synth_line}
 </div>
 """, unsafe_allow_html=True)
 
